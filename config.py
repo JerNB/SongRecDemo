@@ -1,0 +1,232 @@
+"""
+Central configuration for the KGRec-music recommendation project.
+
+All file paths, preprocessing constants, split parameters, model
+hyperparameters, and evaluation settings live here. Importing this
+module in every other module ensures one source of truth.
+"""
+
+from pathlib import Path
+
+# ---------------------------------------------------------------------------
+# Paths
+# ---------------------------------------------------------------------------
+
+ROOT = Path(__file__).resolve().parent
+
+# Raw dataset tree (do not modify anything under here)
+DATA_RAW = ROOT / "KGRec-dataset" / "KGRec-dataset" / "KGRec-music"
+INTERACTIONS_CSV = DATA_RAW / "implicit_lf_dataset.csv"
+DESC_DIR = DATA_RAW / "descriptions"
+TAG_DIR = DATA_RAW / "tags"
+
+# Processed artifacts written by the preprocessing stage
+ARTIFACTS = ROOT / "artifacts"
+SPLITS_DIR = ARTIFACTS / "splits"
+MODELS_DIR = ARTIFACTS / "models"
+RESULTS_DIR = ARTIFACTS / "results"
+
+# Persisted ALS backbone for the personalized recommender.
+# Written by run_train_personalized.py; loaded by the RecommendationService.
+ALS_STATE_FILE = MODELS_DIR / "als_state.pkl"
+
+# Filenames for serialised split artefacts
+TRAIN_FILE = SPLITS_DIR / "train.parquet"
+VAL_FILE = SPLITS_DIR / "val.parquet"
+TEST_FILE = SPLITS_DIR / "test.parquet"
+ITEM_FEATURES_FILE = SPLITS_DIR / "item_features.parquet"   # tags + text per item
+ID_MAPS_FILE = SPLITS_DIR / "id_maps.pkl"                   # raw_id <-> contiguous index
+
+# Tag TF-IDF artefacts (produced by preprocessing; consumed by the
+# content-based recommender AND the intra-list diversity metric).
+TFIDF_MATRIX_FILE = SPLITS_DIR / "tag_tfidf_matrix.npz"     # scipy csr sparse
+TFIDF_VECTORIZER_FILE = SPLITS_DIR / "tag_tfidf_vectorizer.pkl"
+TFIDF_ITEM_INDEX_FILE = SPLITS_DIR / "tag_tfidf_item_index.json"  # ordered item_id_raw
+
+# Human-readable preprocessing summary (recomputed on every run)
+PREPROCESSING_SUMMARY_FILE = SPLITS_DIR / "preprocessing_summary.json"
+
+# ---------------------------------------------------------------------------
+# Split protocol
+# ---------------------------------------------------------------------------
+
+# Fraction of each user's interactions held back for evaluation.
+# Rationale: with ~145 events/user on average, holding 20 % (≈29 items)
+# for val+test leaves ≈116 for training, which is ample for CF and
+# popularity baselines.  The remaining 20 % is split equally so each
+# evaluation split has ~15 held-out items per user – enough to compute
+# meaningful Precision/Recall @K for K up to 10.
+SPLIT_SEED = 42
+VAL_FRACTION = 0.10    # 10 % of each user's interactions → validation
+TEST_FRACTION = 0.10   # 10 % of each user's interactions → test
+# Minimum interactions a user must have to be included.
+# Users with fewer than MIN_USER_INTERACTIONS cannot be split reliably.
+MIN_USER_INTERACTIONS = 5
+
+# ---------------------------------------------------------------------------
+# Known data-quality flags (discovered during audit)
+# ---------------------------------------------------------------------------
+
+# Item IDs whose description text is byte-identical (possible data error).
+# During preprocessing these are logged as a warning; both are kept with
+# their own IDs because they might represent distinct tracks in the KG.
+DUPLICATE_DESC_PAIRS: list[tuple[int, int]] = [(2028, 3130)]
+
+# ---------------------------------------------------------------------------
+# Tag / text preprocessing
+# ---------------------------------------------------------------------------
+
+# Tags that appear below this global frequency across all items are dropped
+# before building the item-feature matrix.  Avoids extremely rare tags
+# polluting TF-IDF or bag-of-tags vectors.
+MIN_TAG_FREQUENCY = 3
+
+# When an item has no tags/*.txt file, its tag representation is treated as
+# an empty bag.  Do NOT impute neighbour tags; that would inject information
+# that is not in the dataset.
+MISSING_TAG_STRATEGY = "empty"   # alternative: "mean_vector" (document if changed)
+
+# Maximum number of description tokens kept per item (truncation guard for
+# long wiki-style blurbs).  Set to None to keep full text.
+MAX_DESC_TOKENS = 512
+
+# ---------------------------------------------------------------------------
+# Evaluation
+# ---------------------------------------------------------------------------
+
+# Recommendation list length evaluated at each K
+EVAL_K_VALUES: list[int] = [5, 10, 20]
+
+# Primary K used in tables / plots throughout the paper
+PRIMARY_K = 10
+
+# Diversity feature source is defined alongside the content-based model
+# below (DIVERSITY_FEATURE_SOURCE); it must match CB_FEATURE_MODE so that
+# diversity is measured in the same feature space the CB model uses.
+
+# ---------------------------------------------------------------------------
+# Popularity baseline
+# ---------------------------------------------------------------------------
+
+# Popularity scores are derived exclusively from TRAINING interactions.
+# Items unseen in training receive score 0 (cold items in the catalogue).
+POPULARITY_SCORE = "count"   # "count" | "log_count" (document choice in report)
+
+# ---------------------------------------------------------------------------
+# Collaborative filtering (implicit matrix factorisation)
+# ---------------------------------------------------------------------------
+
+CF_FACTORS = 64          # latent dimension
+CF_REGULARIZATION = 0.01
+CF_ITERATIONS = 20
+CF_ALPHA = 40            # confidence scaling: c_ui = 1 + alpha * r_ui (r_ui = 1)
+CF_NUM_THREADS = 4       # parallelism for implicit library
+
+# ---------------------------------------------------------------------------
+# Content-based recommender
+# ---------------------------------------------------------------------------
+
+# Feature representation used by the main content-based model.
+#
+# Decision: "tags_bow" (TF-IDF on normalised Last.fm tag tokens).
+#
+# Rationale:
+#   1. Tags ("indie", "mellow", "psychedelic", "80s") are structured
+#      semantic labels that directly encode genre, mood, and era — exactly
+#      the dimensions of music similarity we want to capture.
+#   2. Descriptions are narrative prose (artist trivia, album context).
+#      High-frequency story words ("song", "released", "guitar") act as
+#      noise in a similarity space; artist-name tokens create spurious
+#      similarity between different tracks by the same artist.
+#   3. A combined representation requires an α weight to balance the
+#      tag sub-matrix (~500-1500 columns) against the desc sub-matrix
+#      (~10,000 columns after max_features truncation). Tuning α would
+#      consume validation budget and introduce a hyperparameter that
+#      muddies the model comparison. Tags alone are the cleaner choice.
+#   4. With sublinear_tf=True, TF-IDF on tags reduces to IDF weighting
+#      (each tag appears once per item), which correctly penalises common
+#      genre labels and up-weights discriminative niche tags.
+#   5. 401 items lack tag files; these receive zero-vector rows and will
+#      not be recommended by the content model. This is documented, not
+#      papered over with imputation.
+#
+# Alternatives available but not used in the main experiment:
+#   "tfidf_desc" : TF-IDF on cleaned description text (see rationale above)
+#   "combined"   : weighted horizontal stack (requires tuning α; excluded)
+CB_FEATURE_MODE: str = "tags_bow"
+
+# Candidate retrieval at inference:
+# At 8640 items the full catalogue is scored exhaustively (O(n_items * d)
+# per user), no ANN index needed.  CB_TOP_K_CANDIDATES acts as a
+# pre-filter for the re-rank step; set to n_items to disable pre-filtering.
+CB_TOP_K_CANDIDATES: int = 500   # > max(EVAL_K_VALUES)=20; effectively exhaustive
+
+# The item-feature space used by the Intra-List Diversity metric.
+# Must match CB_FEATURE_MODE so that diversity scores are measured in the
+# same space as the content model's similarity scores.
+DIVERSITY_FEATURE_SOURCE: str = "tags"   # "tags" | "tfidf_desc"
+
+# ---------------------------------------------------------------------------
+# NetEase Cloud Music API (optional metadata enrichment)
+# ---------------------------------------------------------------------------
+#
+# This block configures an OPTIONAL display-side enricher only.  It is
+# never read by the training pipeline, the ALS model, the evaluator, or
+# the personalized scoring engine -- those operate exclusively on KGRec
+# item IDs and KGRec item features.  The NetEase enricher only attaches
+# prettier frontend metadata (title / artist / album / cover image /
+# NetEase song ID + page URL) to the already-ranked recommendations,
+# and it falls back to the internal-features enricher whenever the API
+# is unreachable or no high-confidence match is found.
+#
+# Reference Node.js service:
+#   https://github.com/NeteaseCloudMusicApiEnhanced/api-enhanced
+#
+# Run it locally on port 3000 (see docs/netease_api_setup.md):
+#   git clone https://github.com/NeteaseCloudMusicApiEnhanced/api-enhanced
+#   cd api-enhanced && pnpm install && node app.js
+#
+# All values can be overridden via environment variables of the same
+# name -- handy for swapping between localhost, a Docker container, or
+# disabling the enricher entirely without code changes.
+import os as _os
+
+# Base URL of the running NetEase API service.  The enricher prepends
+# this to its endpoint paths (e.g. ``/search``, ``/song/detail``).
+NETEASE_API_BASE_URL: str = _os.environ.get(
+    "NETEASE_API_BASE_URL", "http://localhost:3000"
+).rstrip("/")
+
+# Local on-disk cache for NetEase API responses.  Repeated demo runs
+# replay from this cache instead of re-hitting the API, which makes the
+# demo deterministic and friendly to flaky network conditions.
+NETEASE_CACHE_PATH: Path = ARTIFACTS / "netease_cache.sqlite"
+
+# HTTP request timeout (seconds) for a single call to the NetEase API.
+# Kept short on purpose: the recommender response is interactive, and
+# we would rather fall back to internal metadata than block the UI.
+NETEASE_TIMEOUT_SECONDS: float = float(
+    _os.environ.get("NETEASE_TIMEOUT_SECONDS", "5.0")
+)
+
+# Max number of retries for transient HTTP failures (timeouts, 5xx).
+# After the budget is exhausted the enricher falls back gracefully.
+NETEASE_MAX_RETRIES: int = int(_os.environ.get("NETEASE_MAX_RETRIES", "1"))
+
+# How many search candidates to fetch per query before scoring.  Larger
+# = more chances to find a good match; smaller = lower API load.
+NETEASE_SEARCH_LIMIT: int = int(_os.environ.get("NETEASE_SEARCH_LIMIT", "5"))
+
+# Minimum match-confidence (in [0, 1]) required to accept a NetEase
+# candidate.  Below this the enricher falls back to internal metadata
+# only, so we never display a wrong title just because the API
+# returned *some* result.  Tuned empirically against KGRec-music: the
+# scorer in netease_enrichment.py awards 0.40 for full artist-token
+# coverage and an extra +0.10 when a KGRec tag confirms the artist.
+# 0.40 therefore lets a clean description-level artist match through
+# (e.g. "Yeah Yeah Yeahs" mentioned in the desc but with no matching
+# tag), while a single-token coincidence -- typical for unrelated
+# candidates -- never reaches it.
+NETEASE_MIN_CONFIDENCE: float = float(
+    _os.environ.get("NETEASE_MIN_CONFIDENCE", "0.40")
+)
