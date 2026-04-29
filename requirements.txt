@@ -1,0 +1,19 @@
+# Core data stack
+pandas>=2.0
+numpy>=1.24
+scipy>=1.10
+
+# TF-IDF vectoriser and other transforms
+scikit-learn>=1.3
+
+# Parquet serialisation of split artefacts
+pyarrow>=15.0
+
+# Reporting layer (charts for the senior-project write-up)
+matplotlib>=3.8
+
+# Collaborative filtering (ALS): implemented in-tree using NumPy/SciPy
+# (see src/recommenders/collaborative.py). No external ALS library is
+# required — the HKV 2008 algorithm is small enough to carry as first-
+# class code, which keeps the pipeline reproducible from the core
+# scientific-Python stack alone.
