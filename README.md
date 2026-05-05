@@ -204,41 +204,64 @@ when the artefacts are large.
 
 ## 6. Use the UI
 
-1. **Search real songs** &mdash; type a song name, artist, or vibe in
-   the search box. Results come straight from NetEase via
-   `GET /api/song-search`.
-2. **Add picks** &mdash; click `+ Add` to put a song into "Songs I
-   like". Each pick is a real song with cover art + title + artist.
-3. **Profile fields (optional)** &mdash; comma-separated
-   - **Favourite artists**
-   - **Genres** (e.g. `indie, folk`)
-   - **Moods** (e.g. `mellow, energetic`)
-   - **Other tags** (e.g. `summer, 80s`)
-   The backend merges genres + moods + tags into one `tags` bag.
-4. **Sliders** &mdash; content similarity, novelty, diversity, k.
-5. **Get recommendations** &mdash; `POST /api/recommend`. Each card
-   shows title, artist, album, cover art, NetEase link, an
-   explanation, a list of reasons, the matched tags, and a pick-type
-   badge.
+The homepage is organized as a real music recommendation flow rather
+than a model-testing page.
+
+1. **Choose songs you like** - search by song title, artist, or both.
+   The UI calls `GET /api/song-search?q=...` and renders NetEase song
+   cards with cover art, title, artist, album, duration when available,
+   and an **Add as liked song** button. Selected songs appear in
+   **Songs I like** and can be removed before submitting.
+2. **Describe your taste** - add comma-separated favorite artists,
+   genres, moods, and tags. Example inputs include `Radiohead, Adele,
+   Jay Chou`, `indie rock, R&B, Mandopop`, `sad, energetic, chill`, and
+   `acoustic, piano, alternative`.
+3. **Tune the recommendation style** - use the sliders with product
+   labels:
+   `Stay close to my taste` -> backend `content_weight`;
+   `Discovery level` -> backend `novelty`;
+   `List variety` -> backend `diversity`;
+   `Number of songs` -> backend `k`.
+4. **Use presets when presenting** - **Safe Mix** keeps results close
+   to the profile, **Balanced** uses medium similarity/discovery/variety,
+   and **Discovery** pushes novelty and variety higher.
+5. **Get recommendations** - the frontend sends `POST /api/recommend`
+   with NetEase-shaped `liked_songs` plus artists, genres, moods, tags,
+   sliders, and `k`. Recommendation cards lead with real song metadata,
+   then show the explanation, reason chips, NetEase link, and a
+   collapsible **Why this song?** score view.
 
 Pick-type badges:
 
-| Badge                                     | Meaning                                                             |
-| ----------------------------------------- | ------------------------------------------------------------------- |
-| <code>safe</code>                         | Same artist as one of your picks, or strong content overlap.        |
-| <code>exploratory</code>                  | Long-tail pick &mdash; different artist, deeper search rank.        |
-| <code>diverse</code>                      | MMR pulled this card up to broaden the result list.                 |
+| Badge | Meaning |
+| --- | --- |
+| `safe` | Close to the selected songs, artists, genres, or moods. |
+| `exploratory` | A more surprising pick that leans into discovery. |
+| `diverse` | Promoted to keep the list from getting too narrow. |
+| `balanced` | A middle-ground pick when no single signal dominates. |
 
-### Advanced (developer) panel
+The **Try example** area fills the form with three demo-ready profiles:
+Safe English alt-rock, Chinese pop discovery, and broader electronic /
+indie-pop discovery. The examples also preload a useful search query;
+selecting one or two songs before submitting makes the result list
+more specific.
 
-Hidden behind a `<details>` toggle in the form. Lets you call
-`POST /api/kgrec-recommend` directly with raw KGRec item IDs. This
-is the **research-layer** debug route &mdash; the KGRec model can only
-recommend KGRec items, so the cards there carry KGRec IDs and a
-"KGRec id ###" badge instead of pretending to be real songs.
+### Technical details
 
-This is a tool for inspecting the trained model, not for end users.
-Running the server with `--no-kgrec` disables the route entirely.
+Main cards do not show KGRec item IDs, raw JSON, route names, or raw
+score keys. Open **Why this song?** on a card for readable score labels
+such as Taste match, Retrieval confidence, Artist affinity, Novelty,
+and Diversity promotion.
+
+The results panel also includes an **Advanced / technical details**
+toggle after recommendations are generated. It contains raw
+`score_breakdown`, source routes, NetEase song IDs, `model_info`,
+`candidate_summary`, and the KGRec research-mode route reference for
+debugging.
+
+`POST /api/kgrec-recommend` remains a developer-only research route for
+raw KGRec item IDs. It is not part of the main user flow. Running the
+server with `--no-kgrec` disables that route entirely.
 
 ---
 
@@ -317,19 +340,34 @@ Response:
         "score": 0.812,
         "score_breakdown": {
           "final": 0.812,
+          "final_score": 0.812,
+          "base_relevance": 0.690,
           "content": 0.560,
+          "content_score": 0.560,
+          "content_text_similarity": 0.430,
           "artist_match": 1.000,
           "tag_match": 0.500,
           "title_match": 0.000,
-          "retrieval": 1.000,
-          "multi_source": 0.000,
-          "novelty_term": 0.000
+          "retrieval": 0.880,
+          "retrieval_confidence_score": 0.880,
+          "multi_source": 0.450,
+          "collaborative_proxy_score": 0.450,
+          "artist_affinity_score": 1.000,
+          "popularity_score": 0.660,
+          "artist_authority_score": 0.540,
+          "playable_score": 1.000,
+          "audio_quality_score": 0.800,
+          "metadata_quality_score": 1.000,
+          "trust_score": 0.700,
+          "novelty_score": 0.220,
+          "novelty_bonus": 0.066,
+          "novelty_term": 0.220
         },
-        "explanation": "Safe pick from Phoebe Bridgers, who is in your liked artists.",
+        "explanation": "This is a close match because it has strong relevance support from your artists, content profile, or high-confidence retrieval paths.",
         "reasons": [
           "Same artist as someone you like: Phoebe Bridgers",
           "Matches your tags: indie folk, mellow",
-          "Found via multiple signals: artist, tag"
+          "Found through multiple preference paths: artist, genre"
         ],
         "matched_tags": ["indie folk", "mellow"],
         "sources": ["artist:Phoebe Bridgers", "tag:indie folk"],
@@ -337,11 +375,32 @@ Response:
       }
     ],
     "control":           { "content_weight": 0.5, "novelty": 0.3, "diversity": 0.3, "k": 10 },
-    "candidate_summary": { "artist": 4, "tag": 3, "title": 4, "discovery": 4, "total_unique": 11 },
+    "candidate_summary": {
+      "retrieved_total": 58,
+      "after_dedup": 17,
+      "filtered_liked": 1,
+      "filtered_same_title": 3,
+      "filtered_tag_title": 1,
+      "filtered_duplicate_version": 0,
+      "filtered_missing_metadata": 0,
+      "enriched_count": 12,
+      "filtered_low_trust": 0,
+      "filtered_unplayable": 0,
+      "final_candidate_count": 12
+    },
     "profile":           { "liked_song_ids": [12345], "liked_artists": ["Phoebe Bridgers"], "tags": ["indie folk", "mellow"], ... },
     "model_info": {
       "name": "NetEase-Pipeline-v1",
-      "research_layer": "ALS-Personalized-v1 (KGRec, untouched)",
+      "model_type": "real_song_hybrid_retrieval_ranking",
+      "uses_netease_api": true,
+      "trained_collaborative_filtering": false,
+      "collaborative_proxy_used": true,
+      "candidate_enrichment_used": true,
+      "quality_thresholds": {
+        "soft_min_comment_count": 10,
+        "soft_min_artist_follow_count": 77
+      },
+      "research_layer": "KGRec ALS/content/popularity evaluation remains separate",
       "source": "NetEase /search"
     },
     "fallback_used": null
@@ -386,43 +445,117 @@ loading.
 
 ## 8. The recommendation pipeline (logic notes)
 
-The product layer is intentionally model-light: it relies on NetEase
-search as a retrieval engine and on simple, well-justified content
-features for ranking. The high-level loop is:
+The KGRec code is the research/evaluation layer. It contains the
+popularity baseline, ALS collaborative filtering, content-based tag
+recommender, shared evaluation protocol, and saved validation results.
+The Real Song Mode does not change those artifacts.
 
-1. **Profile** &mdash; liked songs contribute their artists + title
-   tokens; explicit liked artists are added; tags / genres / moods
-   merge into one bag of tokens.
-2. **Retrieve** &mdash; up to 4 search channels:
-   - per-artist (top liked artists),
-   - per-tag (top tag phrases),
-   - per-title (top liked song titles),
-   - discovery (one broad combo query).
-   Each candidate remembers which channels surfaced it and its rank
-   in each channel.
-3. **Score** &mdash; per-candidate normalised sub-scores in [0, 1]:
-   - `artist_match` = 1.0 on exact match, else token Jaccard.
-   - `tag_match` = fraction of profile tag tokens in the candidate's
-     metadata bag (title + artist + album).
-   - `title_match` = liked-title token overlap, scaled by sqrt of
-     vocabulary size.
-   - `retrieval` = position-decayed average across channels, plus a
-     multi-source bonus (capped).
-   Final score blends these with the user's sliders:
+The Real Song Mode is the NetEase product-demo layer. It uses NetEase
+as a real-song retrieval source, then ranks the candidate pool with a
+small, explainable hybrid scorer:
+
+1. **Profile** &mdash; liked songs, liked artists, genres, moods, and
+   tags are normalized into a profile text while preserving original
+   title/artist/album metadata for display. The profile keeps separate
+   `preferred_genres`, `preferred_moods`, `preferred_tags`, seed artist
+   weights, selected song text, liked title keys, and query-intent
+   terms.
+2. **Retrieve** &mdash; NetEase `/search` is called through multiple
+   routes:
+   - artist,
+   - artist + genre/mood,
+   - genre/tag/mood,
+   - genre + mood and tag combinations,
+   - seed song title + artist,
+   - artist + album keyword,
+   - low-reliability title-only,
+   - discovery queries built from top profile terms.
+   Each source records its name, source type, query text, reliability
+   weight, and original NetEase result position.
+3. **Filter** &mdash; the demo removes liked/excluded tracks, same-title
+   covers or variants, literal tag-title shortcut matches such as a
+   song named `alternative rock`, exact duplicate title+artist rows,
+   avoidable live/remix/acoustic/version duplicates, and candidates
+   missing title or artist when alternatives exist.
+4. **Enrich top candidates** &mdash; after a lightweight first score,
+   the backend enriches only the strongest candidates (currently top
+   30) with optional NetEase evidence:
+   - comment totals / hot comment count,
+   - dynamic popularity signals such as red-count-like fields when
+     available,
+   - artist follower / authority fields when the endpoint exposes them,
+   - playable URL status and audio quality,
+   - lyric excerpts and similar-song IDs when available.
+   These calls are cached under a `songrec_demo:enrich:*` namespace.
+   If an endpoint is empty, cookie-gated, region-limited, or slow, the
+   pipeline keeps working and treats the missing feature as unknown
+   rather than as a failed recommendation.
+5. **Trust filter** &mdash; enriched candidates can be filtered when they
+   are simultaneously weak on public evidence and weak on route
+   evidence. The current soft thresholds are `comment_count < 10` and
+   `artist_follow_count < 77`, combined with low collaborative proxy
+   and low retrieval confidence. Known-unplayable songs are filtered.
+6. **Score** &mdash; each candidate gets explicit, inspectable signals:
+   - `content_score`, backed by lightweight local TF-IDF cosine
+     similarity plus artist/tag/title matches.
+   - `retrieval_confidence_score`, based on source reliability, NetEase
+     rank position, and metadata completeness.
+   - `collaborative_proxy_score`, a multi-source co-occurrence signal:
+     candidates found by several independent preference routes are more
+     trustworthy. This is not trained collaborative filtering.
+   - `artist_affinity_score`, from liked/seed artist weights.
+   - `popularity_score`, from comments, hot comments, and red-count-like
+     public signals when available.
+   - `artist_authority_score`, from artist follower/fan-count-like
+     fields when available.
+   - `playable_score` and `audio_quality_score`, so the demo avoids
+     recommending songs known to be unavailable.
+   - `trust_score`, a compact diagnostic that combines public evidence,
+     route evidence, playability, and metadata completeness.
+   - `metadata_quality_score`, favoring complete real-song cards.
+   - `novelty_score`, for unfamiliar but still relevant candidates.
+
+   The final score is:
 
    ```
-   content   = 0.50 * artist_match + 0.30 * tag_match + 0.20 * title_match
-   final     = (1 - content_weight) * retrieval
-             + content_weight       * content
-             + novelty              * (1 - artist_in_liked) * (1 - retrieval)
+   content_score =
+       0.35 * content_text_similarity
+     + 0.30 * artist_match
+     + 0.25 * tag_match
+     + 0.10 * title_match
+
+   base_relevance =
+       0.25 * content_score
+     + 0.18 * collaborative_proxy_score
+     + 0.15 * retrieval_confidence_score
+     + 0.12 * artist_affinity_score
+     + 0.10 * popularity_score
+     + 0.10 * artist_authority_score
+     + 0.05 * playable_score
+     + 0.05 * metadata_quality_score
+
+   relevance_gate = min(1.0, base_relevance / 0.55)
+   novelty_bonus  = novelty_slider * novelty_score * relevance_gate
+   final_score    = clip(base_relevance + novelty_bonus)
    ```
-4. **MMR rerank** &mdash; greedy diversification with `lambda = diversity`.
-   Similarity is `0.7 * same-artist + 0.3 * tag-Jaccard`. A
-   per-artist cap (default 2) prevents the result list from being
-   dominated by one artist's catalogue.
-5. **Explain** &mdash; each card gets a one-line explanation, a list of
-   reasons, the matched tags, and a `pick_type` of `safe`,
-   `exploratory`, or `diverse`.
+
+   The novelty gate matters: a random result should not win just
+   because it is unfamiliar.
+7. **MMR rerank** &mdash; greedy diversification with
+   `lambda = diversity`. Similarity blends same artist, tag/genre/mood
+   overlap, album overlap, and TF-IDF text-vector similarity. The
+   per-artist cap is `1` for `k <= 5`, `2` for `6 <= k <= 10`, and `3`
+   for larger lists.
+8. **Explain** &mdash; each card gets a user-facing sentence, structured
+   reasons, matched tags, score breakdown, and a `pick_type` of `safe`,
+   `exploratory`, `diverse`, or `balanced`.
+
+True collaborative filtering over NetEase would require real
+user-song behavior data such as listens, likes, skips, saves, or
+playlist co-occurrence. This demo does not have that data and does not
+claim to train a NetEase CF model. Its `collaborative_proxy_score` is
+only a multi-source retrieval co-occurrence signal inspired by the
+intuition behind collaborative filtering.
 
 Caching: every NetEase `/search` call is cached on disk in
 `artifacts/netease_cache.sqlite` (the same cache the research-layer
@@ -455,12 +588,28 @@ Checks:
 4. Recommendation cards include title, artist, album, NetEase link,
    explanation, score breakdown, matched tags, and a `pick_type`
    label.
-5. The main `/api/recommend` response **never** carries a KGRec
+5. Score breakdown includes `content_score`,
+   `content_text_similarity`, `collaborative_proxy_score`,
+   `retrieval_confidence_score`, `artist_affinity_score`,
+   `popularity_score`, `artist_authority_score`, `playable_score`,
+   `audio_quality_score`, `metadata_quality_score`, `trust_score`,
+   `novelty_score`, `novelty_bonus`, and `final_score`.
+6. Low-trust title-only candidates and known-unplayable candidates are
+   filtered using cached enrichment evidence.
+7. Novelty is gated by relevance, so irrelevant candidates do not win
+   just because they are unfamiliar.
+8. MMR respects the small-`k` per-artist cap when alternatives exist.
+9. Same-title variants and literal tag-title shortcut matches are
+   filtered.
+10. Explanations exist and match the card's `pick_type`.
+11. `model_info` states that Real Song Mode uses a collaborative proxy,
+   not trained NetEase collaborative filtering.
+12. The main `/api/recommend` response **never** carries a KGRec
    `item_id` field (recursive walk asserts).
-6. Empty input -> response with `fallback_used = "no_input"`,
+13. Empty input -> response with `fallback_used = "no_input"`,
    200 OK.
-7. Bad body -> 400 / wrong content type -> 415.
-8. `/api/kgrec-recommend` answers 503 when the research layer is
+14. Bad body -> 400 / wrong content type -> 415.
+15. `/api/kgrec-recommend` answers 503 when the research layer is
    disabled (`--no-kgrec`).
 
 Exit code is `0` on full pass and `1` otherwise.

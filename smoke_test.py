@@ -48,7 +48,7 @@ for p in (str(_ROOT), str(_HERE)):
         sys.path.insert(0, p)
 
 from app import create_app, HOLDER                 # noqa: E402
-from netease_pipeline import FakeNeteaseClient     # noqa: E402
+from netease_pipeline import FakeNeteaseClient, _norm_title     # noqa: E402
 
 
 # ---------------------------------------------------------------------------
@@ -138,9 +138,65 @@ def _holocene_query() -> list[dict[str, Any]]:
          "artist": "Bon Iver", "artists": ["Bon Iver"],
          "album": "Live At Sydney Opera House",
          "cover_url": "https://example/live.jpg"},
+        {"netease_song_id": 44344, "title": "Holocene",
+         "artist": "Other Artist", "artists": ["Other Artist"],
+         "album": "Covers Vol 0", "cover_url": "https://example/exact-cover.jpg"},
         {"netease_song_id": 44346, "title": "Holocene (Cover)",
          "artist": "Indie Cindy", "artists": ["Indie Cindy"],
          "album": "Covers Vol 1", "cover_url": "https://example/cover.jpg"},
+    ]
+
+
+def _tag_traps() -> list[dict[str, Any]]:
+    return [
+        {"netease_song_id": 55345, "title": "Alternative Rock",
+         "artist": "Search Term", "artists": ["Search Term"],
+         "album": "Literal Matches", "cover_url": "https://example/alt-rock.jpg"},
+        {"netease_song_id": 55346, "title": "Sad",
+         "artist": "Mood Word", "artists": ["Mood Word"],
+         "album": "Literal Matches", "cover_url": "https://example/sad.jpg"},
+        {"netease_song_id": 55347, "title": "Rock",
+         "artist": "Genre Word", "artists": ["Genre Word"],
+         "album": "Literal Matches", "cover_url": "https://example/rock.jpg"},
+        {"netease_song_id": 55348, "title": "Midnight Exit",
+         "artist": "Actual Band", "artists": ["Actual Band"],
+         "album": "Static Flowers", "cover_url": "https://example/midnight.jpg"},
+    ]
+
+
+def _cap_artist() -> list[dict[str, Any]]:
+    return [
+        {"netease_song_id": 66341, "title": "Cap One",
+         "artist": "Cap Artist", "artists": ["Cap Artist"],
+         "album": "One Album", "cover_url": "https://example/cap1.jpg"},
+        {"netease_song_id": 66342, "title": "Cap Two",
+         "artist": "Cap Artist", "artists": ["Cap Artist"],
+         "album": "One Album", "cover_url": "https://example/cap2.jpg"},
+        {"netease_song_id": 66343, "title": "Cap Three",
+         "artist": "Cap Artist", "artists": ["Cap Artist"],
+         "album": "One Album", "cover_url": "https://example/cap3.jpg"},
+        {"netease_song_id": 66344, "title": "Cap Four",
+         "artist": "Cap Artist", "artists": ["Cap Artist"],
+         "album": "One Album", "cover_url": "https://example/cap4.jpg"},
+    ]
+
+
+def _dream_pop_pool() -> list[dict[str, Any]]:
+    return [
+        {"netease_song_id": 77341, "title": "Soft Signal",
+         "artist": "Relevant Band", "artists": ["Relevant Band"],
+         "album": "Dream Pop Signals", "cover_url": "https://example/signal.jpg"},
+        {"netease_song_id": 77342, "title": "Random Machine",
+         "artist": "Unrelated Noise", "artists": ["Unrelated Noise"],
+         "album": "Concrete Static", "cover_url": "https://example/noise.jpg"},
+    ]
+
+
+def _weak_title_only() -> list[dict[str, Any]]:
+    return [
+        {"netease_song_id": 88341, "title": "Weak B Side",
+         "artist": "Tiny Upload", "artists": ["Tiny Upload"],
+         "album": "Unknown Upload", "cover_url": "https://example/weak.jpg"},
     ]
 
 
@@ -151,8 +207,70 @@ CANNED = {
     "indie":             _indie_mix(),
     "mellow":            _indie_mix(),
     "holocene":          _holocene_query(),
+    "sad":               _tag_traps(),
+    "alternative rock":  _tag_traps(),
+    "rock":              _tag_traps(),
+    "cap artist":        _cap_artist(),
+    "cap artist indie folk": _cap_artist(),
+    "dream pop":         _dream_pop_pool(),
+    "seed track":        _weak_title_only(),
     "indie folk mellow": _indie_mix(),
 }
+
+
+def _enrichments() -> dict[int, dict[str, Any]]:
+    out: dict[int, dict[str, Any]] = {}
+    for rows in CANNED.values():
+        for row in rows:
+            sid = int(row["netease_song_id"])
+            out[sid] = {
+                "comment_count": 120,
+                "hot_comment_count": 3,
+                "song_red_count": 300,
+                "artist_follow_count": 1200,
+                "playable": True,
+                "audio_quality": 0.8,
+                "similar_song_ids": [sid + 1, sid + 2],
+            }
+    # A weak candidate should be filtered only when the route evidence is
+    # also weak.
+    out[55348] = {
+        "comment_count": 2,
+        "hot_comment_count": 0,
+        "song_red_count": 0,
+        "artist_follow_count": 20,
+        "playable": True,
+        "audio_quality": 0.5,
+        "similar_song_ids": [],
+    }
+    out[77342] = {
+        "comment_count": 4,
+        "hot_comment_count": 0,
+        "song_red_count": 0,
+        "artist_follow_count": 25,
+        "playable": True,
+        "audio_quality": 0.5,
+        "similar_song_ids": [],
+    }
+    out[66343] = {
+        "comment_count": 200,
+        "hot_comment_count": 2,
+        "song_red_count": 100,
+        "artist_follow_count": 5000,
+        "playable": False,
+        "audio_quality": 0.8,
+        "similar_song_ids": [],
+    }
+    out[88341] = {
+        "comment_count": 1,
+        "hot_comment_count": 0,
+        "song_red_count": 0,
+        "artist_follow_count": 10,
+        "playable": True,
+        "audio_quality": 0.4,
+        "similar_song_ids": [],
+    }
+    return out
 
 
 # ---------------------------------------------------------------------------
@@ -195,7 +313,12 @@ def make_client():
     waits for ALS artefacts to deserialise. The KGRec debug route is
     expected to answer 503 -- which is asserted in its own test.
     """
-    fake = FakeNeteaseClient(responses=CANNED, default=_indie_mix(), alive=True)
+    fake = FakeNeteaseClient(
+        responses=CANNED,
+        default=_indie_mix(),
+        enrichments=_enrichments(),
+        alive=True,
+    )
     cache = _MemoryQueryCache()
     HOLDER.inject_for_tests(client=fake, cache=cache, netease_alive=True)
     app = create_app(eager=True, load_kgrec=False)
@@ -284,9 +407,98 @@ def test_recommend_picks(client) -> None:
             f"profile didn't pick up liked song: {profile}")
     _expect("Phoebe Bridgers" in (profile.get("liked_artists") or []),
             f"profile missing liked artist: {profile}")
+    _expect("indie folk" in (profile.get("preferred_genres") or []),
+            f"profile missing preferred genre: {profile}")
+    _expect("mellow" in (profile.get("preferred_moods") or []),
+            f"profile missing preferred mood: {profile}")
     cs = data.get("candidate_summary") or {}
-    _expect(int(cs.get("total_unique") or 0) > 0,
+    for key in ("retrieved_total", "after_dedup", "filtered_liked",
+                "filtered_same_title", "filtered_tag_title",
+                "filtered_duplicate_version", "filtered_missing_metadata",
+                "enriched_count", "filtered_low_trust",
+                "filtered_unplayable", "final_candidate_count"):
+        _expect(key in cs, f"candidate summary missing `{key}`: {cs}")
+    _expect(int(cs.get("final_candidate_count") or 0) > 0,
             f"empty candidate summary: {cs}")
+
+
+def test_recommend_filters_same_liked_title(client) -> None:
+    """Different song ids / artists with the same liked-song title are
+    covers or variants, not fresh recommendations."""
+    pick = {
+        "netease_song_id": 12345, "title": "Holocene",
+        "artist": "Bon Iver", "artists": ["Bon Iver"],
+        "album": "Bon Iver, Bon Iver",
+        "cover_url": "https://example/holocene.jpg",
+    }
+    res = client.post("/api/recommend", json={
+        "liked_songs": [pick],
+        "liked_artists": ["Bon Iver"],
+        "k": 8,
+    })
+    _expect(res.status_code == 200, f"recommend returned {res.status_code}")
+    data = (res.get_json() or {})["data"]
+    for it in data.get("items") or []:
+        _expect(_norm_title(it.get("title") or "") != "holocene",
+                f"same-title liked song leaked into recommendations: {it}")
+    cs = data.get("candidate_summary") or {}
+    _expect(int(cs.get("filtered_same_title") or 0) >= 2,
+            f"same-title filter did not report filtered candidates: {cs}")
+
+
+def test_recommend_filters_literal_tag_titles(client) -> None:
+    """Genre/mood words in the title are not evidence of genre fit."""
+    res = client.post("/api/recommend", json={
+        "tags": ["sad", "alternative rock", "rock"],
+        "k": 8,
+        "content_weight": 0.8,
+    })
+    _expect(res.status_code == 200, f"recommend returned {res.status_code}")
+    data = (res.get_json() or {})["data"]
+    literal_tag_titles = {"sad", "alternative rock", "rock"}
+    for it in data.get("items") or []:
+        title_key = _norm_title(it.get("title") or "")
+        _expect(title_key not in literal_tag_titles,
+                f"literal tag-title candidate leaked into recommendations: {it}")
+        if title_key in literal_tag_titles:
+            _expect(it.get("pick_type") != "safe",
+                    f"literal tag-title candidate was marked safe: {it}")
+    cs = data.get("candidate_summary") or {}
+    _expect(int(cs.get("filtered_tag_title") or 0) >= 3,
+            f"tag-title filter did not report filtered candidates: {cs}")
+
+
+def test_recommend_filters_low_trust_title_only(client) -> None:
+    pick = {
+        "netease_song_id": 88000, "title": "Seed Track",
+        "artist": "", "artists": [],
+        "album": "", "cover_url": "",
+    }
+    res = client.post("/api/recommend", json={
+        "liked_songs": [pick],
+        "k": 5,
+    })
+    _expect(res.status_code == 200, f"recommend returned {res.status_code}")
+    data = (res.get_json() or {})["data"]
+    ids = {int(it["netease_song_id"]) for it in data.get("items") or []}
+    _expect(88341 not in ids, f"low-trust title-only candidate was recommended: {data}")
+    cs = data.get("candidate_summary") or {}
+    _expect(int(cs.get("filtered_low_trust") or 0) >= 1,
+            f"low-trust filter did not report filtered candidates: {cs}")
+
+
+def test_recommend_filters_unplayable(client) -> None:
+    res = client.post("/api/recommend", json={
+        "liked_artists": ["Cap Artist"],
+        "k": 5,
+    })
+    _expect(res.status_code == 200, f"recommend returned {res.status_code}")
+    data = (res.get_json() or {})["data"]
+    ids = {int(it["netease_song_id"]) for it in data.get("items") or []}
+    _expect(66343 not in ids, f"known-unplayable song was recommended: {data.get('items')}")
+    cs = data.get("candidate_summary") or {}
+    _expect(int(cs.get("filtered_unplayable") or 0) >= 1,
+            f"unplayable filter did not report filtered candidates: {cs}")
 
 
 def test_recommend_card_fields(client) -> None:
@@ -306,10 +518,16 @@ def test_recommend_card_fields(client) -> None:
     items = (res.get_json() or {})["data"]["items"]
     _expect(items, "no items returned")
 
-    pick_types = {"safe", "exploratory", "diverse"}
+    pick_types = {"safe", "exploratory", "diverse", "balanced"}
     needed_breakdown = {
         "final", "content", "artist_match", "tag_match", "title_match",
         "retrieval", "multi_source", "novelty_term",
+        "content_score", "content_text_similarity",
+        "collaborative_proxy_score", "retrieval_confidence_score",
+        "artist_affinity_score", "metadata_quality_score",
+        "novelty_score", "novelty_bonus", "final_score",
+        "popularity_score", "artist_authority_score", "playable_score",
+        "audio_quality_score", "trust_score",
     }
 
     for it in items:
@@ -336,6 +554,80 @@ def test_recommend_card_fields(client) -> None:
                 f"empty title on item {it.get('netease_song_id')}")
         _expect(it["netease_url"].startswith("https://music.163.com/"),
                 f"item missing NetEase URL: {it}")
+
+
+def test_novelty_does_not_promote_irrelevant(client) -> None:
+    """Novelty is gated by relevance, so a random-looking candidate
+    should not beat a candidate with real genre/profile support."""
+    res = client.post("/api/recommend", json={
+        "genres": ["dream pop"],
+        "k": 2,
+        "novelty": 1.0,
+    })
+    _expect(res.status_code == 200, f"recommend returned {res.status_code}")
+    items = (res.get_json() or {})["data"]["items"]
+    titles = [it["title"] for it in items]
+    _expect("Soft Signal" in titles and "Random Machine" in titles,
+            f"expected both relevance-test candidates, got {titles}")
+    rank = {it["title"]: it["rank"] for it in items}
+    _expect(rank["Soft Signal"] < rank["Random Machine"],
+            f"irrelevant candidate outranked relevant one under novelty: {items}")
+
+
+def test_mmr_respects_small_k_artist_cap(client) -> None:
+    res = client.post("/api/recommend", json={
+        "liked_artists": ["Cap Artist"],
+        "genres": ["indie folk"],
+        "k": 5,
+        "diversity": 0.9,
+    })
+    _expect(res.status_code == 200, f"recommend returned {res.status_code}")
+    items = (res.get_json() or {})["data"]["items"]
+    cap_count = sum(1 for it in items if it.get("artist") == "Cap Artist")
+    _expect(cap_count <= 1,
+            f"k<=5 should keep at most one song per artist when alternatives exist: {items}")
+
+
+def test_explanations_match_pick_type(client) -> None:
+    res = client.post("/api/recommend", json={
+        "liked_artists": ["Bon Iver"],
+        "genres": ["indie folk"],
+        "moods": ["mellow"],
+        "k": 6,
+        "diversity": 0.8,
+    })
+    _expect(res.status_code == 200, f"recommend returned {res.status_code}")
+    items = (res.get_json() or {})["data"]["items"]
+    _expect(items, "no recommendations returned")
+    expected_fragments = {
+        "safe": "close match",
+        "exploratory": "broader discovery",
+        "diverse": "less repetitive",
+        "balanced": "balanced recommendation",
+    }
+    for it in items:
+        frag = expected_fragments[it["pick_type"]]
+        _expect(frag in it["explanation"],
+                f"explanation does not match pick_type={it['pick_type']}: {it['explanation']}")
+
+
+def test_model_info_is_honest(client) -> None:
+    res = client.post("/api/recommend", json={
+        "liked_artists": ["Bon Iver"],
+        "k": 3,
+    })
+    _expect(res.status_code == 200, f"recommend returned {res.status_code}")
+    info = ((res.get_json() or {})["data"].get("model_info") or {})
+    _expect(info.get("model_type") == "real_song_hybrid_retrieval_ranking",
+            f"unexpected model_type: {info}")
+    _expect(info.get("uses_netease_api") is True,
+            f"uses_netease_api should be true: {info}")
+    _expect(info.get("trained_collaborative_filtering") is False,
+            f"must not claim trained NetEase CF: {info}")
+    _expect(info.get("collaborative_proxy_used") is True,
+            f"collaborative proxy flag missing: {info}")
+    _expect("separate" in str(info.get("research_layer", "")).lower(),
+            f"research layer separation not stated: {info}")
 
 
 def test_no_kgrec_ids_in_main_output(client) -> None:
@@ -425,11 +717,19 @@ def main() -> int:
         ("1) GET  /api/health",                         lambda: test_health(client)),
         ("2) GET  /api/song-search returns NetEase hits", lambda: test_song_search(client)),
         ("3) Search hit -> liked-song -> /api/recommend", lambda: test_recommend_picks(client)),
-        ("4) /api/recommend cards have real-song fields", lambda: test_recommend_card_fields(client)),
-        ("5) /api/recommend never leaks KGRec item_id",   lambda: test_no_kgrec_ids_in_main_output(client)),
-        ("6) /api/recommend (empty body) -> no_input",    lambda: test_recommend_empty_input(client)),
-        ("7) /api/recommend (bad body) -> 400/415",       lambda: test_recommend_bad_body(client)),
-        ("8) /api/kgrec-recommend disabled -> 503",       lambda: test_kgrec_debug_disabled(client)),
+        ("4) /api/recommend filters same liked-song title", lambda: test_recommend_filters_same_liked_title(client)),
+        ("5) /api/recommend filters literal tag titles", lambda: test_recommend_filters_literal_tag_titles(client)),
+        ("6) /api/recommend filters low-trust title-only songs", lambda: test_recommend_filters_low_trust_title_only(client)),
+        ("7) /api/recommend filters unplayable songs",     lambda: test_recommend_filters_unplayable(client)),
+        ("8) /api/recommend cards have real-song fields", lambda: test_recommend_card_fields(client)),
+        ("9) novelty is gated by relevance",              lambda: test_novelty_does_not_promote_irrelevant(client)),
+        ("10) MMR respects k<=5 artist cap",               lambda: test_mmr_respects_small_k_artist_cap(client)),
+        ("11) explanations match pick_type",               lambda: test_explanations_match_pick_type(client)),
+        ("12) model_info is honest about proxy scoring",   lambda: test_model_info_is_honest(client)),
+        ("13) /api/recommend never leaks KGRec item_id",   lambda: test_no_kgrec_ids_in_main_output(client)),
+        ("14) /api/recommend (empty body) -> no_input",    lambda: test_recommend_empty_input(client)),
+        ("15) /api/recommend (bad body) -> 400/415",       lambda: test_recommend_bad_body(client)),
+        ("16) /api/kgrec-recommend disabled -> 503",       lambda: test_kgrec_debug_disabled(client)),
     ]
 
     results: list[_Result] = []

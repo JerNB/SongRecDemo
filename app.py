@@ -393,18 +393,12 @@ def _build_real_song_request(payload: dict[str, Any]) -> RealSongRequest:
     if not isinstance(payload, dict):
         raise ValueError("Request body must be a JSON object.")
 
-    # The frontend submits separate genres / moods fields for clarity;
-    # the pipeline merges them with `tags` so the backend has one bag.
-    tags = (
-        _coerce_str_list(payload.get("tags"), "tags", max_len=20)
-        + _coerce_str_list(payload.get("genres"), "genres", max_len=20)
-        + _coerce_str_list(payload.get("moods"), "moods", max_len=20)
-    )
-
     return RealSongRequest(
         liked_songs=_coerce_track_list(payload.get("liked_songs"), "liked_songs"),
         liked_artists=_coerce_str_list(payload.get("liked_artists"), "liked_artists", max_len=15),
-        tags=tags,
+        genres=_coerce_str_list(payload.get("genres"), "genres", max_len=20),
+        moods=_coerce_str_list(payload.get("moods"), "moods", max_len=20),
+        tags=_coerce_str_list(payload.get("tags"), "tags", max_len=20),
         excluded_song_ids=_coerce_int_list(payload.get("excluded_song_ids"), "excluded_song_ids"),
         content_weight=_coerce_float(payload.get("content_weight"), "content_weight", 0.50),
         novelty=_coerce_float(payload.get("novelty"), "novelty", 0.30),
