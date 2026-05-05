@@ -3,198 +3,212 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Real-Song Music Recommender — Demo</title>
+  <title>SongRec - Real Song Recommendations</title>
   <link rel="stylesheet" href="/styles.css" />
 </head>
 <body>
   <header class="topbar">
     <div class="brand">
-      <span class="brand-mark"></span>
-      <h1>Real-Song Music Recommender</h1>
-      <span class="layer-badge product" title="NetEase real-song product layer">product layer</span>
+      <span class="brand-mark" aria-hidden="true"></span>
+      <div>
+        <h1>SongRec</h1>
+        <p>Real song recommendations with clear reasons.</p>
+      </div>
     </div>
-    <div class="status" id="status">
+    <div class="status" id="status" role="status" aria-live="polite">
       <span class="dot dot-idle" id="status-dot"></span>
-      <span id="status-text">connecting…</span>
+      <span id="status-text">Connecting...</span>
     </div>
   </header>
 
-  <main class="layout">
-    <!-- ---------------------------------------------------------- -->
-    <!-- Left column: input form                                    -->
-    <!-- ---------------------------------------------------------- -->
-    <section class="panel form-panel">
-      <h2>Tell us what you like</h2>
-      <p class="muted">
-        Search real songs, add a few you love, and optionally type
-        artists, genres, or moods. We&rsquo;ll recommend specific real
-        songs &mdash; with title, artist, album, cover art, and a
-        link you can actually open.
-      </p>
-
-      <!-- Real-song search ----------------------------------------- -->
-      <div class="search-block">
-        <label for="search-q">Search real songs</label>
-        <div class="search-input-row">
-          <input id="search-q" type="search"
-                 placeholder="e.g. Bon Iver, Blinding Lights, Kanye West"
-                 autocomplete="off" />
-          <button type="button" id="search-clear" class="ghost"
-                  title="Clear search">×</button>
-        </div>
-        <div id="search-results" class="search-results" hidden></div>
-        <small id="search-status" class="muted"></small>
-      </div>
-
-      <!-- Songs I like -------------------------------------------- -->
-      <div class="picks">
-        <div class="picks-block">
-          <div class="picks-header">
-            <strong>Songs I like</strong>
-            <span class="muted" id="picks-count">0</span>
-          </div>
-          <div id="picks-chips" class="chips"></div>
-          <p id="picks-empty" class="empty-line muted">
-            Nothing picked yet &mdash; search above and click <code>+ Add</code>.
-          </p>
-        </div>
-      </div>
-
-      <!-- Free-text profile fields --------------------------------- -->
-      <form id="rec-form" autocomplete="off">
-        <label for="liked_artists">Favourite artists <span class="muted">(optional)</span></label>
-        <input id="liked_artists" name="liked_artists" type="text"
-               placeholder="e.g. Bon Iver, Phoebe Bridgers, Kanye West" />
-        <small class="muted">Comma-separated. Searched as artist names.</small>
-
-        <label for="genres">Genres <span class="muted">(optional)</span></label>
-        <input id="genres" name="genres" type="text"
-               placeholder="e.g. indie, folk, hip hop" />
-
-        <label for="moods">Moods <span class="muted">(optional)</span></label>
-        <input id="moods" name="moods" type="text"
-               placeholder="e.g. mellow, energetic, dreamy" />
-
-        <label for="tags">Other tags <span class="muted">(optional)</span></label>
-        <input id="tags" name="tags" type="text"
-               placeholder="e.g. summer, 80s, road trip" />
-
-        <!-- Sliders ----------------------------------------------- -->
-        <div class="sliders">
-          <div class="slider-row">
-            <label for="content_weight">
-              Content similarity
-              <span class="value" id="content_weight_v">0.50</span>
-            </label>
-            <input id="content_weight" name="content_weight"
-                   type="range" min="0" max="1" step="0.05" value="0.50" />
-            <small class="muted">0 = purely retrieval rank · 1 = purely artist/tag similarity</small>
-          </div>
-
-          <div class="slider-row">
-            <label for="novelty">
-              Novelty
-              <span class="value" id="novelty_v">0.30</span>
-            </label>
-            <input id="novelty" name="novelty"
-                   type="range" min="0" max="1" step="0.05" value="0.30" />
-            <small class="muted">0 = obvious picks · 1 = explore the long tail</small>
-          </div>
-
-          <div class="slider-row">
-            <label for="diversity">
-              Diversity
-              <span class="value" id="diversity_v">0.30</span>
-            </label>
-            <input id="diversity" name="diversity"
-                   type="range" min="0" max="1" step="0.05" value="0.30" />
-            <small class="muted">MMR rerank · spread artists and tags</small>
-          </div>
-
-          <div class="slider-row">
-            <label for="k">
-              How many (k)
-              <span class="value" id="k_v">10</span>
-            </label>
-            <input id="k" name="k"
-                   type="range" min="1" max="20" step="1" value="10" />
-          </div>
-        </div>
-
-        <div class="actions">
-          <button type="submit" id="submit-btn" class="primary">
-            Get recommendations
-          </button>
-          <button type="button" id="example-btn" class="secondary">
-            Try an example
-          </button>
-        </div>
-
-        <div class="error" id="error" hidden></div>
-
-        <!-- Advanced / developer panel -------------------------- -->
-        <details class="advanced">
-          <summary>Advanced (developer · KGRec research layer)</summary>
-          <p class="muted">
-            The KGRec ALS model is the <em>research</em> layer. It can only
-            score the 8&nbsp;640 KGRec items, so it cannot recommend real
-            songs by name. This panel calls
-            <code>POST&nbsp;/api/kgrec-recommend</code> directly with KGRec
-            item IDs, bypassing the NetEase product layer. For developers
-            inspecting the trained model only.
-          </p>
-          <label for="seed_ids_raw">KGRec seed item IDs</label>
-          <input id="seed_ids_raw" type="text" placeholder="e.g. 1679, 2076, 5094" />
-          <label for="favorite_ids_raw">KGRec favourite item IDs</label>
-          <input id="favorite_ids_raw" type="text" placeholder="e.g. 2502" />
-          <label for="kgrec_tags">KGRec tags (comma-separated)</label>
-          <input id="kgrec_tags" type="text" placeholder="e.g. indie, mellow, 80s" />
-          <button type="button" id="kgrec-btn" class="secondary kgrec-btn">
-            Run KGRec model (debug)
-          </button>
-        </details>
-      </form>
-    </section>
-
-    <!-- ---------------------------------------------------------- -->
-    <!-- Right column: response                                     -->
-    <!-- ---------------------------------------------------------- -->
-    <section class="panel results-panel">
-      <div class="results-header">
-        <h2>Recommendations</h2>
-        <div class="results-meta" id="results-meta" hidden></div>
-      </div>
-
-      <div id="empty-state" class="empty">
-        <p>Submit the form to see ranked real-song recommendations here.</p>
-        <p class="muted">
-          Each card carries a title, artist, album, cover art, and a
-          link to NetEase. Cards are labelled
-          <span class="pick pick-safe">safe</span>,
-          <span class="pick pick-exploratory">exploratory</span>, or
-          <span class="pick pick-diverse">diverse</span> so you can
-          tell which picks are obvious and which are the system
-          stretching.
+  <main class="shell">
+    <section class="intro">
+      <div>
+        <h2>Build a music profile from songs you actually like.</h2>
+        <p>
+          Search real songs, add artists and taste tags, choose how safe or exploratory
+          the list should be, then get ranked NetEase song recommendations.
         </p>
       </div>
-
-      <div id="loading" class="loading" hidden>
-        <div class="spinner"></div>
-        <p>Searching NetEase &amp; ranking candidates…</p>
-      </div>
-
-      <div id="profile-summary" class="seed-summary" hidden></div>
-
-      <ol id="cards" class="cards"></ol>
-
-      <!-- Optional KGRec debug response --------------------------- -->
-      <ol id="kgrec-cards" class="cards kgrec-cards" hidden></ol>
+      <button type="button" class="primary intro-action" id="intro-submit">Get recommendations</button>
     </section>
+
+    <div class="workspace">
+      <form id="rec-form" class="input-column" autocomplete="off">
+        <section class="section-card" aria-labelledby="choose-title">
+          <div class="section-heading">
+            <span class="step">A</span>
+            <div>
+              <h2 id="choose-title">Choose songs you like</h2>
+              <p>Search NetEase and add a few real songs as taste anchors.</p>
+            </div>
+          </div>
+
+          <label class="field-label" for="search-q">Song search</label>
+          <div class="search-row">
+            <input id="search-q" type="search" placeholder="Try 'Adele Hello' or 'Radiohead Karma Police'" autocomplete="off" />
+            <button type="button" id="search-btn" class="secondary">Search</button>
+          </div>
+          <p id="search-status" class="field-help" aria-live="polite"></p>
+          <div id="search-results" class="search-results" hidden></div>
+
+          <div class="selected-header">
+            <h3>Songs I like</h3>
+            <span id="picks-count">0 selected</span>
+          </div>
+          <div id="picks-list" class="selected-list"></div>
+          <p id="picks-empty" class="empty-note">Search for a few songs or describe your taste to start.</p>
+        </section>
+
+        <section class="section-card" aria-labelledby="taste-title">
+          <div class="section-heading">
+            <span class="step">B</span>
+            <div>
+              <h2 id="taste-title">Describe your taste</h2>
+              <p>Add comma-separated artists, genres, moods, and tags.</p>
+            </div>
+          </div>
+
+          <label class="field-label" for="liked_artists">Favorite artists</label>
+          <input id="liked_artists" type="text" placeholder="Radiohead, Adele, Jay Chou" />
+
+          <label class="field-label" for="genres">Genres</label>
+          <input id="genres" type="text" placeholder="indie rock, R&B, Mandopop, electronic" />
+
+          <label class="field-label" for="moods">Moods</label>
+          <input id="moods" type="text" placeholder="sad, energetic, chill, romantic" />
+
+          <label class="field-label" for="tags">Tags</label>
+          <input id="tags" type="text" placeholder="acoustic, piano, alternative, dream pop" />
+
+          <div id="taste-chips" class="taste-chips" aria-live="polite"></div>
+        </section>
+
+        <section class="section-card" aria-labelledby="style-title">
+          <div class="section-heading">
+            <span class="step">C</span>
+            <div>
+              <h2 id="style-title">Tune the recommendation style</h2>
+              <p>Use presets or adjust the list yourself.</p>
+            </div>
+          </div>
+
+          <div class="preset-row" aria-label="Recommendation presets">
+            <button type="button" class="preset" data-preset="safe">Safe Mix</button>
+            <button type="button" class="preset active" data-preset="balanced">Balanced</button>
+            <button type="button" class="preset" data-preset="discovery">Discovery</button>
+          </div>
+
+          <div class="slider-block">
+            <div class="slider-top">
+              <label for="content_weight">Stay close to my taste</label>
+              <output id="content_weight_v" for="content_weight">0.60</output>
+            </div>
+            <input id="content_weight" type="range" min="0" max="1" step="0.05" value="0.60" />
+            <div class="range-labels"><span>Broader</span><span>Closer</span></div>
+          </div>
+
+          <div class="slider-block">
+            <div class="slider-top">
+              <label for="novelty">Discovery level</label>
+              <output id="novelty_v" for="novelty">0.40</output>
+            </div>
+            <input id="novelty" type="range" min="0" max="1" step="0.05" value="0.40" />
+            <div class="range-labels"><span>Safer</span><span>More hidden gems</span></div>
+          </div>
+
+          <div class="slider-block">
+            <div class="slider-top">
+              <label for="diversity">List variety</label>
+              <output id="diversity_v" for="diversity">0.50</output>
+            </div>
+            <input id="diversity" type="range" min="0" max="1" step="0.05" value="0.50" />
+            <div class="range-labels"><span>Focused</span><span>More diverse</span></div>
+          </div>
+
+          <label class="field-label" for="k">Number of songs</label>
+          <div class="number-row">
+            <input id="k" type="number" min="1" max="30" step="1" value="10" />
+            <span id="k_v">10 songs</span>
+          </div>
+
+          <button type="submit" id="submit-btn" class="primary submit-btn">Build recommendation list</button>
+          <div class="error" id="error" hidden></div>
+        </section>
+
+        <section class="section-card examples" aria-labelledby="examples-title">
+          <div class="section-heading compact">
+            <span class="step">Try</span>
+            <div>
+              <h2 id="examples-title">Try example</h2>
+              <p>Fill the form with a presentation-friendly profile.</p>
+            </div>
+          </div>
+          <div class="example-grid">
+            <button type="button" class="example-card" data-example="alt-rock">
+              <strong>Safe English alt-rock</strong>
+              <span>Radiohead, Coldplay; sad and mellow.</span>
+            </button>
+            <button type="button" class="example-card" data-example="mandopop">
+              <strong>Chinese pop discovery</strong>
+              <span>Jay Chou, Eason Chan; nostalgic romance.</span>
+            </button>
+            <button type="button" class="example-card" data-example="broad">
+              <strong>Broader discovery</strong>
+              <span>Electronic, indie pop; synth and dance.</span>
+            </button>
+          </div>
+          <p class="field-help">Examples fill taste fields and preload a useful search query. Add one or two songs before presenting for stronger recommendations.</p>
+        </section>
+      </form>
+
+      <section class="results-column" aria-labelledby="results-title">
+        <div class="results-panel">
+          <div class="results-heading">
+            <div class="section-heading compact">
+              <span class="step">D</span>
+              <div>
+                <h2 id="results-title">Recommended songs</h2>
+                <p id="results-subtitle">Your ranked list will appear here.</p>
+              </div>
+            </div>
+            <div id="results-meta" class="results-meta" hidden></div>
+          </div>
+
+          <div id="loading" class="loading" hidden>
+            <div class="spinner"></div>
+            <p>Building your recommendation list...</p>
+          </div>
+
+          <div id="empty-state" class="empty-state">
+            <strong>Search for a few songs or describe your taste to start.</strong>
+            <p>Recommendations will show covers, artists, albums, explanations, and a short reason trail.</p>
+          </div>
+
+          <ol id="cards" class="cards"></ol>
+
+          <details id="technical-details" class="technical-details" hidden>
+            <summary>Advanced / technical details</summary>
+            <div id="technical-body"></div>
+          </details>
+        </div>
+
+        <aside class="layer-note">
+          <strong>Research layer vs. product layer</strong>
+          <p>
+            This demo has two layers. The KGRec research layer evaluates popularity,
+            ALS collaborative filtering, and content-based recommendation on an academic
+            dataset. The Real Song Mode uses NetEase search plus hybrid ranking to turn
+            that recommendation logic into a real-song user experience.
+          </p>
+        </aside>
+      </section>
+    </div>
   </main>
 
   <footer class="footer">
-    <span id="model-info" class="muted">model: —</span>
-    <span class="muted">Local demo · binds to 127.0.0.1 only</span>
+    <span id="model-info">Local demo</span>
+    <span>127.0.0.1 only</span>
   </footer>
 
   <script src="/app.js"></script>

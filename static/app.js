@@ -1,589 +1,359 @@
-/* ----------------------------------------------------------------------
- * Real-song music recommender -- demo frontend.
- *
- * Talks to the local Flask backend (`SongRecDemo/app.py`):
- *   GET  /api/health                     -> service status banner
- *   GET  /api/song-search?q=...&limit=N  -> live NetEase real-song search
- *   POST /api/recommend                  -> NetEase-pipeline real-song recs
- *   POST /api/kgrec-recommend            -> developer-only KGRec debug route
- *
- * UX shape:
- *   1. The user types a song / artist / mood in the search box.
- *   2. The frontend hits /api/song-search and renders real-song result
- *      cards with cover + title + artist + album.
- *   3. The user clicks "+ Add" to add songs to "Songs I like".
- *   4. Optional comma-separated fields collect favourite artists,
- *      genres, moods, and other tags.
- *   5. Sliders + (k) compose the rest of the request.
- *   6. /api/recommend returns ranked real-song cards with title,
- *      artist, album, cover, NetEase link, explanation, score
- *      breakdown, matched tags, and a pick-type badge.
- *
- * The KGRec ALS model is the *research* layer and is reachable only
- * from the Advanced / developer panel. Normal users never see KGRec
- * item IDs in the main flow.
- * ---------------------------------------------------------------------- */
-
+/* Real-song music recommender frontend. Main flow hides KGRec item IDs. */
 (function () {
   "use strict";
 
-  // ============================== state ==============================
-
-  const state = {
-    picks: new Map(),          // netease_song_id -> TrackRef-shaped object
-    lastSearch: { q: "", items: [] },
+  const state = { selectedSongs: new Map(), lastSearchItems: [], isSearching: false };
+  const $ = (id) => document.getElementById(id);
+  const els = {
+    form: $("rec-form"), introSubmit: $("intro-submit"), submit: $("submit-btn"),
+    error: $("error"), statusDot: $("status-dot"), statusText: $("status-text"),
+    modelInfo: $("model-info"), searchQ: $("search-q"), searchBtn: $("search-btn"),
+    searchStatus: $("search-status"), searchResults: $("search-results"),
+    picksList: $("picks-list"), picksCount: $("picks-count"), picksEmpty: $("picks-empty"),
+    tasteChips: $("taste-chips"), loading: $("loading"), empty: $("empty-state"),
+    cards: $("cards"), resultsMeta: $("results-meta"), resultsSubtitle: $("results-subtitle"),
+    technicalDetails: $("technical-details"), technicalBody: $("technical-body"),
+  };
+  const sliders = { content_weight: $("content_weight"), novelty: $("novelty"), diversity: $("diversity") };
+  const presets = {
+    safe: { content_weight: 0.85, novelty: 0.15, diversity: 0.20 },
+    balanced: { content_weight: 0.60, novelty: 0.40, diversity: 0.50 },
+    discovery: { content_weight: 0.50, novelty: 0.80, diversity: 0.75 },
+  };
+  const examples = {
+    "alt-rock": { query: "Radiohead Karma Police", artists: "Radiohead, Coldplay", genres: "alternative rock, indie rock", moods: "sad, mellow", tags: "piano, alternative", preset: "safe" },
+    mandopop: { query: "Jay Chou", artists: "Jay Chou, Eason Chan", genres: "Mandopop", moods: "nostalgic, romantic", tags: "", preset: "balanced" },
+    broad: { query: "electronic indie pop", artists: "", genres: "electronic, indie pop", moods: "energetic, dreamy", tags: "synth, dance", preset: "discovery" },
+  };
+  const scoreLabels = {
+    final: "Overall fit", content: "Taste match", artist_match: "Artist affinity",
+    tag_match: "Genre and mood match", title_match: "Liked-song similarity",
+    retrieval: "Retrieval confidence", multi_source: "Multiple signals",
+    novelty_term: "Novelty", diversity_boost: "Diversity promotion",
+    metadata_quality_score: "Metadata quality", collaborative_proxy_score: "Collaborative proxy",
+    retrieval_confidence_score: "Retrieval confidence", artist_affinity_score: "Artist affinity",
+    novelty_score: "Discovery value", content_score: "Taste match",
   };
 
-  // ============================== DOM handles =========================
-
-  const $form        = document.getElementById("rec-form");
-  const $submit      = document.getElementById("submit-btn");
-  const $example     = document.getElementById("example-btn");
-  const $error       = document.getElementById("error");
-  const $cards       = document.getElementById("cards");
-  const $kgrecCards  = document.getElementById("kgrec-cards");
-  const $empty       = document.getElementById("empty-state");
-  const $loading     = document.getElementById("loading");
-  const $resultsMeta = document.getElementById("results-meta");
-  const $profileSum  = document.getElementById("profile-summary");
-  const $modelInfo   = document.getElementById("model-info");
-  const $statusDot   = document.getElementById("status-dot");
-  const $statusText  = document.getElementById("status-text");
-
-  const $searchQ      = document.getElementById("search-q");
-  const $searchClear  = document.getElementById("search-clear");
-  const $searchResults = document.getElementById("search-results");
-  const $searchStatus = document.getElementById("search-status");
-
-  const $picksChips  = document.getElementById("picks-chips");
-  const $picksCount  = document.getElementById("picks-count");
-  const $picksEmpty  = document.getElementById("picks-empty");
-
-  const $kgrecBtn   = document.getElementById("kgrec-btn");
-
-  // Slider value mirrors.
-  const SLIDERS = ["content_weight", "novelty", "diversity", "k"];
-  for (const id of SLIDERS) {
-    const el = document.getElementById(id);
-    const out = document.getElementById(id + "_v");
-    if (!el || !out) continue;
-    const fmt = (id === "k")
-      ? (v) => String(parseInt(v, 10))
-      : (v) => Number(v).toFixed(2);
-    out.textContent = fmt(el.value);
-    el.addEventListener("input", () => { out.textContent = fmt(el.value); });
+  function escapeHtml(value) {
+    return String(value ?? "").replace(/&/g, "&amp;").replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#39;");
   }
-
-  // ============================== utilities ==========================
-
-  function escapeHtml(s) {
-    if (s === null || s === undefined) return "";
-    return String(s)
-      .replace(/&/g, "&amp;")
-      .replace(/</g, "&lt;")
-      .replace(/>/g, "&gt;")
-      .replace(/"/g, "&quot;")
-      .replace(/'/g, "&#39;");
+  function parseCsv(raw) { return String(raw || "").split(",").map((s) => s.trim()).filter(Boolean); }
+  function uniq(values) {
+    const out = [], seen = new Set();
+    for (const value of values) {
+      const s = String(value).trim(), key = s.toLowerCase();
+      if (s && !seen.has(key)) { seen.add(key); out.push(s); }
+    }
+    return out;
   }
-
-  function parseCsv(raw) {
-    if (!raw) return [];
-    return raw.split(",").map((s) => s.trim()).filter(Boolean);
+  function httpsify(url) { return url ? String(url).replace(/^http:\/\//i, "https://") : ""; }
+  function formatDuration(ms) {
+    const n = Number(ms);
+    if (!Number.isFinite(n) || n <= 0) return "";
+    const total = Math.round(n / 1000);
+    return `${Math.floor(total / 60)}:${String(total % 60).padStart(2, "0")}`;
   }
-
-  function debounce(fn, ms) {
-    let t = 0;
-    return function (...args) {
-      clearTimeout(t);
-      t = setTimeout(() => fn.apply(this, args), ms);
+  function debounce(fn, delay) {
+    let timer = 0;
+    return (...args) => { clearTimeout(timer); timer = setTimeout(() => fn(...args), delay); };
+  }
+  function coverMarkup(url, className) {
+    const safeUrl = httpsify(url);
+    if (!safeUrl) return `<div class="${className} cover-fallback" aria-hidden="true"></div>`;
+    return `<img class="${className}" src="${escapeHtml(safeUrl)}" alt="" loading="lazy" onerror="this.replaceWith(Object.assign(document.createElement('div'), {className: '${className} cover-fallback'}))" />`;
+  }
+  function songId(song) { return String(song?.netease_song_id || ""); }
+  function normalizeSong(song) {
+    return {
+      netease_song_id: song.netease_song_id, title: song.title || "",
+      artist: song.artist || "", artists: Array.isArray(song.artists) ? song.artists : [],
+      album: song.album || "", cover_url: song.cover_url || "",
+      netease_url: song.netease_url || (song.netease_song_id ? `https://music.163.com/#/song?id=${song.netease_song_id}` : ""),
+      duration_ms: song.duration_ms || null,
     };
   }
+  function showError(message) { els.error.textContent = message; els.error.hidden = false; }
+  function clearError() { els.error.textContent = ""; els.error.hidden = true; }
 
-  function httpsify(url) {
-    return url ? String(url).replace(/^http:\/\//, "https://") : "";
+  function updateSliderOutputs() {
+    for (const id of Object.keys(sliders)) $(`${id}_v`).textContent = Number(sliders[id].value).toFixed(2);
+    const k = Math.max(1, Math.min(30, Number($("k").value) || 10));
+    $("k").value = String(k);
+    $("k_v").textContent = `${k} song${k === 1 ? "" : "s"}`;
+  }
+  function setPreset(name) {
+    const preset = presets[name] || presets.balanced;
+    for (const [key, value] of Object.entries(preset)) sliders[key].value = String(value);
+    document.querySelectorAll(".preset").forEach((btn) => btn.classList.toggle("active", btn.dataset.preset === name));
+    updateSliderOutputs();
+  }
+  function renderTasteChips() {
+    const chips = [
+      ...parseCsv($("liked_artists").value).map((v) => ["Artist", v]),
+      ...parseCsv($("genres").value).map((v) => ["Genre", v]),
+      ...parseCsv($("moods").value).map((v) => ["Mood", v]),
+      ...parseCsv($("tags").value).map((v) => ["Tag", v]),
+    ];
+    els.tasteChips.innerHTML = chips.map(([kind, value]) =>
+      `<span class="taste-chip"><b>${escapeHtml(kind)}</b>${escapeHtml(value)}</span>`).join("");
   }
 
-  function coverHtml(coverUrl, klass = "cover") {
-    if (coverUrl) {
-      const u = httpsify(coverUrl);
-      return `<img class="${klass}" src="${escapeHtml(u)}" alt="" loading="lazy"
-                 onerror="this.outerHTML='<div class=&quot;${klass}-fallback&quot;>—</div>'" />`;
+  function renderSelectedSongs() {
+    const songs = Array.from(state.selectedSongs.values());
+    els.picksCount.textContent = `${songs.length} selected`;
+    els.picksEmpty.hidden = songs.length > 0;
+    els.picksList.innerHTML = "";
+    for (const song of songs) {
+      const node = document.createElement("div");
+      node.className = "selected-song";
+      node.innerHTML = `
+        ${coverMarkup(song.cover_url, "mini-cover")}
+        <div class="song-copy">
+          <strong>${escapeHtml(song.title || "Untitled song")}</strong>
+          <span>${escapeHtml([song.artist, song.album].filter(Boolean).join(" - ") || "Unknown artist")}</span>
+        </div>
+        <button type="button" class="icon-btn" title="Remove selected song" aria-label="Remove ${escapeHtml(song.title || "song")}">Remove</button>`;
+      node.querySelector("button").addEventListener("click", () => {
+        state.selectedSongs.delete(songId(song)); renderSelectedSongs(); syncSearchButtons();
+      });
+      els.picksList.appendChild(node);
     }
-    return `<div class="${klass}-fallback">—</div>`;
   }
-
-  // ============================== picks (chips) ======================
-
-  function renderPickChip(item) {
-    const li = document.createElement("span");
-    li.className = "chip";
-    const title  = item.title || "(untitled)";
-    const artist = item.artist || "—";
-    const cover  = item.cover_url
-      ? `<img class="chip-cover" src="${escapeHtml(httpsify(item.cover_url))}"
-              alt="" onerror="this.outerHTML='<div class=&quot;chip-cover-fallback&quot;></div>'" />`
-      : `<div class="chip-cover-fallback"></div>`;
-    li.innerHTML = `
-      ${cover}
-      <span class="chip-text">
-        <span class="chip-title">${escapeHtml(title)}</span>
-        <span class="chip-sub">${escapeHtml(artist)}</span>
-      </span>
-      <button type="button" class="chip-remove" aria-label="Remove" title="Remove">×</button>
-    `;
-    li.querySelector(".chip-remove").addEventListener("click", () => {
-      state.picks.delete(item.netease_song_id);
-      renderPicks();
-      syncSearchAddButtons();
-    });
-    return li;
+  function addSong(song) {
+    const normalized = normalizeSong(song);
+    if (!songId(normalized)) return;
+    state.selectedSongs.set(songId(normalized), normalized);
+    renderSelectedSongs(); syncSearchButtons();
   }
-
-  function renderPicks() {
-    $picksChips.innerHTML = "";
-    for (const item of state.picks.values()) {
-      $picksChips.appendChild(renderPickChip(item));
-    }
-    $picksCount.textContent = String(state.picks.size);
-    $picksEmpty.hidden = state.picks.size > 0;
-  }
-
-  function addPick(item) {
-    if (!item || !item.netease_song_id) return;
-    state.picks.set(item.netease_song_id, item);
-    renderPicks();
-    syncSearchAddButtons();
-  }
-
-  function syncSearchAddButtons() {
-    $searchResults.querySelectorAll("button.add").forEach((btn) => {
-      const id = parseInt(btn.dataset.songId, 10);
-      const inSet = state.picks.has(id);
-      btn.disabled = inSet;
-      btn.textContent = inSet ? "✓ added" : "+ Add";
+  function syncSearchButtons() {
+    els.searchResults.querySelectorAll("[data-add-song]").forEach((btn) => {
+      const added = state.selectedSongs.has(btn.dataset.addSong);
+      btn.disabled = added || state.isSearching;
+      btn.textContent = added ? "Added" : "Add as liked song";
     });
   }
-
-  // ============================== search =============================
-
-  const runSearch = debounce(async (q) => {
-    if (!q) {
-      $searchResults.hidden = true;
-      $searchResults.innerHTML = "";
-      $searchStatus.textContent = "";
-      state.lastSearch = { q: "", items: [] };
+  function renderSearchResults(items) {
+    state.lastSearchItems = items.map(normalizeSong);
+    els.searchResults.innerHTML = "";
+    if (!items.length) {
+      els.searchResults.hidden = true;
+      els.searchStatus.textContent = "No songs found. Try artist + song title, such as 'Adele Hello'.";
       return;
     }
-    $searchStatus.textContent = "searching NetEase…";
+    const lookup = new Map(state.lastSearchItems.map((item) => [songId(item), item]));
+    for (const item of state.lastSearchItems) {
+      const duration = formatDuration(item.duration_ms);
+      const card = document.createElement("article");
+      card.className = "search-card";
+      card.innerHTML = `
+        ${coverMarkup(item.cover_url, "search-cover")}
+        <div class="song-copy">
+          <strong>${escapeHtml(item.title || "Untitled song")}</strong>
+          <span>${escapeHtml(item.artist || "Unknown artist")}</span>
+          <em>${escapeHtml([item.album, duration].filter(Boolean).join(" - "))}</em>
+        </div>
+        <button type="button" class="secondary compact-btn" data-add-song="${escapeHtml(songId(item))}">Add as liked song</button>`;
+      card.querySelector("button").addEventListener("click", (event) => addSong(lookup.get(event.currentTarget.dataset.addSong)));
+      els.searchResults.appendChild(card);
+    }
+    els.searchResults.hidden = false;
+    els.searchStatus.textContent = `${items.length} song${items.length === 1 ? "" : "s"} found`;
+    syncSearchButtons();
+  }
+  async function searchSongs(query) {
+    const q = String(query || "").trim();
+    if (!q) {
+      els.searchResults.hidden = true; els.searchResults.innerHTML = "";
+      els.searchStatus.textContent = ""; state.lastSearchItems = []; return;
+    }
+    state.isSearching = true; els.searchBtn.disabled = true;
+    els.searchStatus.textContent = "Searching songs..."; syncSearchButtons();
     try {
-      const url = `/api/song-search?q=${encodeURIComponent(q)}&limit=10`;
-      const res = await fetch(url);
-      const body = await res.json().catch(() => ({}));
-      if (!res.ok || body.ok === false) {
-        $searchStatus.textContent =
-          body.error || `Search failed (${res.status}).`;
-        $searchResults.hidden = true;
+      const response = await fetch(`/api/song-search?q=${encodeURIComponent(q)}&limit=10`);
+      const body = await response.json().catch(() => ({}));
+      if (!response.ok || body.ok === false) {
+        const offline = response.status === 503 || /netease/i.test(body.error || "");
+        els.searchResults.hidden = true;
+        els.searchStatus.textContent = offline
+          ? "NetEase service is offline. Song search and real-song recommendations may not work. Please start the local NetEase API service."
+          : (body.error || `Search failed (${response.status}).`);
         return;
       }
-      state.lastSearch = { q, items: body.items || [] };
       renderSearchResults(body.items || []);
-      $searchStatus.textContent = (body.items.length
-        ? `${body.items.length} matches`
-        : "no matches")
-        + (body.cached ? " · cached" : "");
-    } catch (err) {
-      $searchStatus.textContent = `network error: ${err.message || err}`;
-      $searchResults.hidden = true;
+    } catch (error) {
+      els.searchResults.hidden = true;
+      els.searchStatus.textContent = `Could not search songs: ${error.message || error}`;
+    } finally {
+      state.isSearching = false; els.searchBtn.disabled = false; syncSearchButtons();
     }
-  }, 240);
-
-  function renderSearchResults(items) {
-    $searchResults.innerHTML = "";
-    if (!items.length) { $searchResults.hidden = true; return; }
-    for (const it of items) {
-      const sub = [it.artist, it.album].filter(Boolean).join(" · ") || "—";
-      const cover = it.cover_url
-        ? `<img class="cover-thumb" src="${escapeHtml(httpsify(it.cover_url))}" alt=""
-                onerror="this.outerHTML='<div class=&quot;cover-thumb-fallback&quot;></div>'" />`
-        : `<div class="cover-thumb-fallback"></div>`;
-      const div = document.createElement("div");
-      div.className = "search-result";
-      div.innerHTML = `
-        ${cover}
-        <div class="meta-line">
-          <span class="name" title="${escapeHtml(it.title)}">${escapeHtml(it.title || "(untitled)")}</span>
-          <span class="sub">${escapeHtml(sub)}</span>
-        </div>
-        <div class="actions">
-          <button type="button" class="add"
-                  data-song-id="${escapeHtml(String(it.netease_song_id))}">+ Add</button>
-        </div>
-      `;
-      $searchResults.appendChild(div);
-    }
-    $searchResults.hidden = false;
-
-    const byId = new Map(state.lastSearch.items.map((x) => [String(x.netease_song_id), x]));
-    $searchResults.querySelectorAll("button.add").forEach((btn) => {
-      btn.addEventListener("click", () => {
-        const it = byId.get(btn.dataset.songId);
-        if (!it) return;
-        addPick(it);
-      });
-    });
-    syncSearchAddButtons();
   }
-
-  $searchQ.addEventListener("input", (e) => runSearch(e.target.value.trim()));
-  $searchClear.addEventListener("click", () => {
-    $searchQ.value = ""; runSearch("");
-    $searchQ.focus();
-  });
-
-  // ============================== health =============================
-
-  fetch("/api/health")
-    .then((r) => r.json())
-    .then((data) => {
-      if (!data || data.ok === false) throw new Error("health failed");
-      const product = data.product_layer || {};
-      const research = data.research_layer || {};
-      $statusDot.className = product.netease_alive ? "dot dot-ok" : "dot dot-warn";
-      const aliveText = product.netease_alive
-        ? "NetEase ✓"
-        : "NetEase offline (cache only)";
-      const researchText = research.enabled
-        ? (research.ready ? `KGRec debug ✓` : "KGRec loading…")
-        : "KGRec disabled";
-      $statusText.textContent = `${product.name || "product"} · ${aliveText} · ${researchText}`;
-      $modelInfo.textContent =
-        `product: ${product.name || "—"} · `
-        + `research: ${research.model || (research.enabled ? "loading…" : "disabled")}`;
-    })
-    .catch(() => {
-      $statusDot.className = "dot dot-bad";
-      $statusText.textContent = "backend unreachable";
-    });
-
-  // ============================== build payload ======================
+  const debouncedSearch = debounce(() => searchSongs(els.searchQ.value), 320);
 
   function buildPayload() {
     return {
-      liked_songs: Array.from(state.picks.values()).map((p) => ({
-        netease_song_id: p.netease_song_id,
-        title:           p.title,
-        artist:          p.artist,
-        artists:         p.artists || [],
-        album:           p.album || "",
-        cover_url:       p.cover_url || "",
+      liked_songs: Array.from(state.selectedSongs.values()).map((song) => ({
+        netease_song_id: song.netease_song_id, title: song.title, artist: song.artist,
+        artists: song.artists, album: song.album, cover_url: song.cover_url,
+        netease_url: song.netease_url,
       })),
-      liked_artists:  parseCsv(document.getElementById("liked_artists").value),
-      genres:         parseCsv(document.getElementById("genres").value),
-      moods:          parseCsv(document.getElementById("moods").value),
-      tags:           parseCsv(document.getElementById("tags").value),
-      content_weight: parseFloat(document.getElementById("content_weight").value),
-      novelty:        parseFloat(document.getElementById("novelty").value),
-      diversity:      parseFloat(document.getElementById("diversity").value),
-      k:              parseInt(document.getElementById("k").value, 10),
+      liked_artists: uniq(parseCsv($("liked_artists").value)),
+      genres: uniq(parseCsv($("genres").value)),
+      moods: uniq(parseCsv($("moods").value)),
+      tags: uniq(parseCsv($("tags").value)),
+      content_weight: Number(sliders.content_weight.value),
+      novelty: Number(sliders.novelty.value),
+      diversity: Number(sliders.diversity.value),
+      k: Number($("k").value) || 10,
     };
   }
-
-  function setLoading(on) {
-    $submit.disabled = on;
-    $submit.textContent = on ? "Searching NetEase…" : "Get recommendations";
-    $loading.hidden = !on;
-    if (on) { $empty.hidden = true; $error.hidden = true; }
+  function hasInput(payload) {
+    return Boolean(payload.liked_songs.length || payload.liked_artists.length || payload.genres.length || payload.moods.length || payload.tags.length);
   }
-
-  function showError(msg) {
-    $error.textContent = msg;
-    $error.hidden = false;
-    $empty.hidden = ($cards.children.length + $kgrecCards.children.length) > 0;
+  function reasonChips(item) {
+    const chips = [], reasons = (item.reasons || []).join(" ").toLowerCase();
+    const sources = item.sources || [], breakdown = item.score_breakdown || {};
+    if (reasons.includes("artist") || breakdown.artist_match > 0.5) chips.push("same artist");
+    if ((item.matched_tags || []).length || breakdown.tag_match > 0) chips.push("matched genre");
+    if (reasons.includes("mood")) chips.push("matched mood");
+    if (sources.length > 1 || breakdown.multi_source > 0) chips.push("multi-source match");
+    if (item.pick_type === "exploratory" || breakdown.novelty_term > 0.25) chips.push("discovery pick");
+    if (item.pick_type === "diverse") chips.push("diversity pick");
+    if (!chips.length && item.pick_type) chips.push(`${item.pick_type} pick`);
+    return uniq(chips).slice(0, 6);
   }
-
-  // ============================== rendering: profile summary =========
-
-  function renderProfileSummary(data) {
-    const profile = data.profile || {};
-    const ctrl = data.control || {};
-    const cs = data.candidate_summary || {};
-    const fb = data.fallback_used;
-
-    const parts = [];
-    if (profile.liked_song_ids?.length) {
-      const titles = Array.from(state.picks.values())
-        .map((p) => p.title || `#${p.netease_song_id}`);
-      parts.push(`<strong>liked songs</strong> <span class="pill">${escapeHtml(titles.join(", "))}</span>`);
+  function readableScoreRows(scoreBreakdown) {
+    const sb = scoreBreakdown || {};
+    const ordered = [
+      ["content", "Taste match"], ["collaborative_proxy_score", "Collaborative proxy"],
+      ["multi_source", "Multiple signals"], ["retrieval", "Retrieval confidence"],
+      ["artist_match", "Artist affinity"], ["novelty_term", "Novelty"],
+      ["diversity_boost", "Diversity promotion"], ["metadata_quality_score", "Metadata quality"],
+      ["tag_match", "Genre and mood match"], ["title_match", "Liked-song similarity"],
+    ];
+    const used = new Set(), rows = [];
+    for (const [key, label] of ordered) {
+      if (typeof sb[key] !== "number") continue;
+      used.add(key); rows.push([label, sb[key]]);
     }
-    if (profile.liked_artists?.length) {
-      parts.push(`<strong>artists</strong> <span class="pill">${escapeHtml(profile.liked_artists.join(", "))}</span>`);
+    for (const [key, value] of Object.entries(sb)) {
+      if (!used.has(key) && typeof value === "number" && key !== "final") rows.push([scoreLabels[key] || key.replaceAll("_", " "), value]);
     }
-    if (profile.tags?.length) {
-      parts.push(`<strong>tags</strong> <span class="pill">${escapeHtml(profile.tags.join(", "))}</span>`);
-    }
-    parts.push(
-      `<strong>candidates</strong> <span class="pill">`
-      + `${cs.total_unique || 0} unique · `
-      + `artist ${cs.artist || 0} · `
-      + `tag ${cs.tag || 0} · `
-      + `title ${cs.title || 0} · `
-      + `discovery ${cs.discovery || 0}`
-      + `</span>`
-    );
-    if (fb) {
-      parts.push(`<span class="badge-fallback">fallback: ${escapeHtml(fb)}</span>`);
-    }
-
-    $profileSum.innerHTML = parts.join(" · ");
-    $profileSum.hidden = false;
-
-    $resultsMeta.innerHTML =
-      `k=${ctrl.k} · content=${(ctrl.content_weight||0).toFixed(2)} · `
-      + `novelty=${(ctrl.novelty||0).toFixed(2)} · diversity=${(ctrl.diversity||0).toFixed(2)}`;
-    $resultsMeta.hidden = false;
+    return rows;
   }
-
-  // ============================== rendering: cards ===================
-
-  function bar(label, value, klass) {
-    const v = Math.max(0, Math.min(1, Number(value) || 0));
-    const pct = (v * 100).toFixed(0) + "%";
-    return `
-      <div class="bar-row">
-        <span>${label}</span>
-        <span class="bar ${klass}"><span style="width:${pct}"></span></span>
-        <span class="num">${v.toFixed(2)}</span>
-      </div>`;
+  function scoreRow(label, value) {
+    const numeric = Number(value) || 0;
+    return `<div class="score-row"><span>${escapeHtml(label)}</span><div class="score-bar"><span style="width: ${Math.max(0, Math.min(1, numeric)) * 100}%"></span></div><b>${numeric.toFixed(2)}</b></div>`;
   }
-
-  function pickBadge(pickType) {
-    const pt = pickType || "safe";
-    return `<span class="pick pick-${escapeHtml(pt)}">${escapeHtml(pt)}</span>`;
-  }
-
-  function renderHead(item) {
-    const title = item.title || "(untitled)";
-    const artist = item.artist || "Unknown artist";
-    const album = item.album || "";
-    const linkHtml = item.netease_url
-      ? `<a class="netease-link" href="${escapeHtml(httpsify(item.netease_url))}"
-            target="_blank" rel="noopener noreferrer">open on NetEase →</a>`
-      : "";
-    return `
-      <div class="card-head">
-        <h3 class="title">${escapeHtml(title)}</h3>
-        <span class="artist">${escapeHtml(artist)}</span>
-        ${album ? `<span class="album">· ${escapeHtml(album)}</span>` : ""}
-        ${pickBadge(item.pick_type)}
-        ${linkHtml}
-      </div>`;
-  }
-
-  function renderBodyExtras(item) {
-    let html = "";
-    if (item.explanation) {
-      html += `<p class="explanation">${escapeHtml(item.explanation)}</p>`;
-    }
-    if (Array.isArray(item.reasons) && item.reasons.length) {
-      html += `<ul class="reasons">${
-        item.reasons.map((r) => `<li>${escapeHtml(r)}</li>`).join("")
-      }</ul>`;
-    }
-    if (Array.isArray(item.matched_tags) && item.matched_tags.length) {
-      html += `<div class="tags">${
-        item.matched_tags.slice(0, 6).map((t) =>
-          `<span class="tag tag-strong">${escapeHtml(t)}</span>`).join("")
-      }</div>`;
-    }
-    return html;
-  }
-
-  function renderBreakdown(item) {
-    const sb = item.score_breakdown || {};
-    return `
-      <div class="breakdown">
-        <div class="score-final">${(item.score ?? 0).toFixed(3)}</div>
-        ${bar("artist",   sb.artist_match, "bar-als")}
-        ${bar("tag",      sb.tag_match,    "bar-content")}
-        ${bar("title",    sb.title_match,  "bar-content")}
-        ${bar("retrieval",sb.retrieval,    "bar-pop")}
-        ${bar("novelty",  sb.novelty_term, "bar-nov")}
-      </div>`;
-  }
-
-  function renderCard(item) {
-    const li = document.createElement("li");
-    li.className = `card mode-full pick-${(item.pick_type || "safe")}`;
-    li.innerHTML = `
-      <div class="rank">${item.rank}</div>
-      ${coverHtml(item.cover_url, "cover")}
-      <div class="card-body">
-        ${renderHead(item)}
-        ${renderBodyExtras(item)}
-      </div>
-      ${renderBreakdown(item)}
-    `;
-    return li;
-  }
-
-  function renderResponse(data) {
-    $cards.innerHTML = "";
-    $kgrecCards.hidden = true;
-    $kgrecCards.innerHTML = "";
-    $empty.hidden = true;
-    renderProfileSummary(data);
-    if (!Array.isArray(data.items) || data.items.length === 0) {
-      $cards.innerHTML = `<li class="empty">
-        No real-song candidates came back. Try adding a liked song,
-        an artist, or a different tag.
-      </li>`;
-      return;
-    }
-    const frag = document.createDocumentFragment();
-    for (const item of data.items) frag.appendChild(renderCard(item));
-    $cards.appendChild(frag);
-  }
-
-  // ============================== submit =============================
-
-  async function submitMain(payload) {
-    setLoading(true);
-    try {
-      const res = await fetch("/api/recommend", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload),
-      });
-      const body = await res.json().catch(() => ({}));
-      if (!res.ok || body.ok === false) {
-        showError(body.error || `Request failed (${res.status}).`);
-        return;
-      }
-      renderResponse(body.data);
-    } catch (err) {
-      showError(`Network error: ${err.message || err}`);
-    } finally {
-      setLoading(false);
-    }
-  }
-
-  $form.addEventListener("submit", (e) => {
-    e.preventDefault();
-    submitMain(buildPayload());
-  });
-
-  // ============================== KGRec debug =========================
-
-  function renderKgrecCard(item) {
-    const md = item.metadata || {};
-    const sb = item.score_breakdown || {};
-    const li = document.createElement("li");
-    li.className = "card mode-internal";
-    const title = md.title || `KGRec item #${item.item_id}`;
-    const artist = md.artist || "(no NetEase artist match)";
-    li.innerHTML = `
-      <div class="rank">${item.rank}</div>
-      ${coverHtml(md.cover_url, "cover")}
-      <div class="card-body">
-        <div class="card-head">
-          <h3 class="title">${escapeHtml(title)}</h3>
-          <span class="artist">${escapeHtml(artist)}</span>
-          <span class="confidence confidence-internal">KGRec id ${escapeHtml(item.item_id)}</span>
+  function renderRecommendationCard(item) {
+    const card = document.createElement("li");
+    card.className = `rec-card pick-${escapeHtml(item.pick_type || "balanced")}`;
+    const chips = reasonChips(item), neteaseUrl = httpsify(item.netease_url);
+    const rows = readableScoreRows(item.score_breakdown);
+    card.innerHTML = `
+      <div class="rank">${escapeHtml(item.rank || "")}</div>
+      ${coverMarkup(item.cover_url, "rec-cover")}
+      <div class="rec-main">
+        <div class="rec-title-row">
+          <div><h3>${escapeHtml(item.title || "Untitled song")}</h3><p>${escapeHtml(item.artist || "Unknown artist")}${item.album ? ` - ${escapeHtml(item.album)}` : ""}</p></div>
+          <span class="pick-badge ${escapeHtml(item.pick_type || "balanced")}">${escapeHtml(item.pick_type || "balanced")}</span>
         </div>
-        <p class="explanation">${escapeHtml(item.explanation || "")}</p>
-        ${Array.isArray(item.reasons) && item.reasons.length
-          ? `<ul class="reasons">${item.reasons.map((r) => `<li>${escapeHtml(r)}</li>`).join("")}</ul>`
-          : ""}
-      </div>
-      <div class="breakdown">
-        <div class="score-final">${(item.score ?? 0).toFixed(3)}</div>
-        ${bar("ALS",     sb.als,     "bar-als")}
-        ${bar("content", sb.content, "bar-content")}
-        ${bar("pop",     sb.popularity, "bar-pop")}
-        ${bar("nov pen", sb.novelty_penalty, "bar-nov")}
-      </div>
-    `;
-    return li;
+        ${neteaseUrl ? `<a class="netease-link" href="${escapeHtml(neteaseUrl)}" target="_blank" rel="noopener noreferrer">Open on NetEase</a>` : ""}
+        <p class="explanation">${escapeHtml(item.explanation || "Recommended because it matches several parts of your taste profile.")}</p>
+        <div class="reason-chips">${chips.map((chip) => `<span>${escapeHtml(chip)}</span>`).join("")}</div>
+        <details class="why"><summary>Why this song?</summary><div class="score-list">${rows.map(([label, value]) => scoreRow(label, value)).join("")}</div></details>
+      </div>`;
+    return card;
   }
-
-  $kgrecBtn.addEventListener("click", async () => {
-    const seed_ids   = parseCsv(document.getElementById("seed_ids_raw").value);
-    const fav_ids    = parseCsv(document.getElementById("favorite_ids_raw").value);
-    const kgrec_tags = parseCsv(document.getElementById("kgrec_tags").value);
-    if (!seed_ids.length && !fav_ids.length && !kgrec_tags.length) {
-      showError("Provide at least one KGRec seed/favourite/tag for the debug route.");
-      return;
+  function renderTechnicalDetails(data) {
+    const details = {
+      candidate_summary: data.candidate_summary || {}, model_info: data.model_info || {},
+      request_id: data.request_id || "", control: data.control || {},
+      items: (data.items || []).map((item) => ({
+        rank: item.rank, title: item.title, artist: item.artist, pick_type: item.pick_type,
+        netease_song_id: item.netease_song_id, sources: item.sources || [],
+        score_breakdown: item.score_breakdown || {},
+      })),
+      kgrec_research_mode: "/api/kgrec-recommend",
+    };
+    els.technicalBody.innerHTML = `<p>Technical fields are hidden from the main experience and shown here for inspection.</p><pre>${escapeHtml(JSON.stringify(details, null, 2))}</pre>`;
+    els.technicalDetails.hidden = false;
+  }
+  function renderResponse(data) {
+    els.cards.innerHTML = ""; els.empty.hidden = true;
+    els.resultsSubtitle.textContent = "Ranked songs based on your profile.";
+    const items = data.items || [];
+    if (!items.length) {
+      els.empty.hidden = false;
+      els.empty.innerHTML = "<strong>No recommendations yet.</strong><p>Try adding at least one song, artist, genre, mood, or tag.</p>";
+      els.technicalDetails.hidden = true; return;
     }
-    $error.hidden = true;
-    $kgrecBtn.disabled = true;
-    $kgrecBtn.textContent = "Running KGRec…";
+    const summary = data.candidate_summary || {};
+    els.resultsMeta.hidden = false;
+    els.resultsMeta.textContent = `${items.length} songs - ${summary.total_unique || 0} candidates`;
+    const fragment = document.createDocumentFragment();
+    items.forEach((item) => fragment.appendChild(renderRecommendationCard(item)));
+    els.cards.appendChild(fragment);
+    renderTechnicalDetails(data);
+    if (data.fallback_used === "no_input") showError("Could not generate recommendations. Try adding at least one song, artist, genre, mood, or tag.");
+  }
+  function setRecommendLoading(on) {
+    els.submit.disabled = on; els.introSubmit.disabled = on;
+    els.submit.textContent = on ? "Building your recommendation list..." : "Build recommendation list";
+    els.loading.hidden = !on;
+    if (on) { clearError(); els.empty.hidden = true; }
+  }
+  async function recommend() {
+    const payload = buildPayload();
+    if (!hasInput(payload)) { showError("Could not generate recommendations. Try adding at least one song, artist, genre, mood, or tag."); return; }
+    setRecommendLoading(true);
     try {
-      const res = await fetch("/api/kgrec-recommend", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          seed_ids, favorite_ids: fav_ids, tags: kgrec_tags,
-          k: parseInt(document.getElementById("k").value, 10),
-          content_weight: parseFloat(document.getElementById("content_weight").value),
-          novelty: parseFloat(document.getElementById("novelty").value),
-          diversity: parseFloat(document.getElementById("diversity").value),
-        }),
-      });
-      const body = await res.json().catch(() => ({}));
-      if (!res.ok || body.ok === false) {
-        showError(body.error || `KGRec debug failed (${res.status}).`);
+      const response = await fetch("/api/recommend", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) });
+      const body = await response.json().catch(() => ({}));
+      if (!response.ok || body.ok === false) {
+        showError("Could not generate recommendations. Try adding at least one song, artist, genre, mood, or tag.");
+        if (body.error) els.error.textContent += ` (${body.error})`;
         return;
       }
-      $kgrecCards.innerHTML = "";
-      $kgrecCards.hidden = false;
-      const banner = document.createElement("li");
-      banner.className = "kgrec-banner";
-      banner.innerHTML = `
-        <strong>KGRec research-layer output (debug)</strong>
-        <p class="muted">
-          ${escapeHtml(body.warning || "Developer-only route. KGRec item IDs are research identifiers.")}
-        </p>`;
-      $kgrecCards.appendChild(banner);
-      const items = (body.data && body.data.items) || [];
-      for (const it of items) $kgrecCards.appendChild(renderKgrecCard(it));
-      $empty.hidden = true;
-    } catch (err) {
-      showError(`Network error: ${err.message || err}`);
+      renderResponse(body.data || {});
+    } catch (error) {
+      showError(`Could not generate recommendations. ${error.message || error}`);
     } finally {
-      $kgrecBtn.disabled = false;
-      $kgrecBtn.textContent = "Run KGRec model (debug)";
+      setRecommendLoading(false);
     }
-  });
-
-  // ============================== example button =====================
-
-  $example.addEventListener("click", async () => {
-    state.picks.clear();
-    document.getElementById("liked_artists").value = "Bon Iver, Phoebe Bridgers";
-    document.getElementById("genres").value = "indie folk";
-    document.getElementById("moods").value = "mellow";
-    document.getElementById("tags").value = "";
-    document.getElementById("content_weight").value = "0.50";
-    document.getElementById("novelty").value        = "0.30";
-    document.getElementById("diversity").value      = "0.30";
-    document.getElementById("k").value              = "10";
-    for (const id of SLIDERS) {
-      document.getElementById(id).dispatchEvent(new Event("input"));
-    }
-
-    // Pull a known artist as a starter pick so the recommend call has
-    // a concrete real-song seed.
+  }
+  async function loadHealth() {
     try {
-      const res = await fetch("/api/song-search?q=Bon%20Iver&limit=4");
-      const body = await res.json();
-      const items = body.items || [];
-      if (items[0]) addPick(items[0]);
-    } catch { /* ignore: profile fields alone are enough */ }
+      const response = await fetch("/api/health"), data = await response.json();
+      const product = data.product_layer || {}, research = data.research_layer || {};
+      const alive = Boolean(product.netease_alive);
+      els.statusDot.className = alive ? "dot dot-ok" : "dot dot-warn";
+      els.statusText.textContent = alive ? "NetEase connected" : "NetEase service is offline. Song search and real-song recommendations may not work. Please start the local NetEase API service.";
+      els.modelInfo.textContent = `${product.name || "Real Song Mode"} - KGRec ${research.enabled ? (research.ready ? "ready" : "loading") : "debug off"}`;
+    } catch {
+      els.statusDot.className = "dot dot-bad"; els.statusText.textContent = "Backend unreachable";
+    }
+  }
+  function applyExample(name) {
+    const example = examples[name];
+    if (!example) return;
+    $("liked_artists").value = example.artists; $("genres").value = example.genres;
+    $("moods").value = example.moods; $("tags").value = example.tags;
+    setPreset(example.preset); renderTasteChips();
+    els.searchQ.value = example.query; searchSongs(example.query); els.searchQ.focus();
+  }
 
-    renderPicks();
-    submitMain(buildPayload());
-  });
-
-  // Initial render.
-  renderPicks();
+  els.form.addEventListener("submit", (event) => { event.preventDefault(); recommend(); });
+  els.introSubmit.addEventListener("click", () => recommend());
+  els.searchBtn.addEventListener("click", () => searchSongs(els.searchQ.value));
+  els.searchQ.addEventListener("input", debouncedSearch);
+  els.searchQ.addEventListener("keydown", (event) => { if (event.key === "Enter") { event.preventDefault(); searchSongs(els.searchQ.value); } });
+  for (const id of ["liked_artists", "genres", "moods", "tags"]) $(id).addEventListener("input", renderTasteChips);
+  for (const slider of Object.values(sliders)) slider.addEventListener("input", updateSliderOutputs);
+  $("k").addEventListener("input", updateSliderOutputs);
+  document.querySelectorAll(".preset").forEach((button) => button.addEventListener("click", () => setPreset(button.dataset.preset)));
+  document.querySelectorAll(".example-card").forEach((button) => button.addEventListener("click", () => applyExample(button.dataset.example)));
+  setPreset("balanced"); updateSliderOutputs(); renderTasteChips(); renderSelectedSongs(); loadHealth();
+  setInterval(loadHealth, 10000);
 })();
