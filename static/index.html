@@ -1,0 +1,202 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Real-Song Music Recommender — Demo</title>
+  <link rel="stylesheet" href="/styles.css" />
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand">
+      <span class="brand-mark"></span>
+      <h1>Real-Song Music Recommender</h1>
+      <span class="layer-badge product" title="NetEase real-song product layer">product layer</span>
+    </div>
+    <div class="status" id="status">
+      <span class="dot dot-idle" id="status-dot"></span>
+      <span id="status-text">connecting…</span>
+    </div>
+  </header>
+
+  <main class="layout">
+    <!-- ---------------------------------------------------------- -->
+    <!-- Left column: input form                                    -->
+    <!-- ---------------------------------------------------------- -->
+    <section class="panel form-panel">
+      <h2>Tell us what you like</h2>
+      <p class="muted">
+        Search real songs, add a few you love, and optionally type
+        artists, genres, or moods. We&rsquo;ll recommend specific real
+        songs &mdash; with title, artist, album, cover art, and a
+        link you can actually open.
+      </p>
+
+      <!-- Real-song search ----------------------------------------- -->
+      <div class="search-block">
+        <label for="search-q">Search real songs</label>
+        <div class="search-input-row">
+          <input id="search-q" type="search"
+                 placeholder="e.g. Bon Iver, Blinding Lights, Kanye West"
+                 autocomplete="off" />
+          <button type="button" id="search-clear" class="ghost"
+                  title="Clear search">×</button>
+        </div>
+        <div id="search-results" class="search-results" hidden></div>
+        <small id="search-status" class="muted"></small>
+      </div>
+
+      <!-- Songs I like -------------------------------------------- -->
+      <div class="picks">
+        <div class="picks-block">
+          <div class="picks-header">
+            <strong>Songs I like</strong>
+            <span class="muted" id="picks-count">0</span>
+          </div>
+          <div id="picks-chips" class="chips"></div>
+          <p id="picks-empty" class="empty-line muted">
+            Nothing picked yet &mdash; search above and click <code>+ Add</code>.
+          </p>
+        </div>
+      </div>
+
+      <!-- Free-text profile fields --------------------------------- -->
+      <form id="rec-form" autocomplete="off">
+        <label for="liked_artists">Favourite artists <span class="muted">(optional)</span></label>
+        <input id="liked_artists" name="liked_artists" type="text"
+               placeholder="e.g. Bon Iver, Phoebe Bridgers, Kanye West" />
+        <small class="muted">Comma-separated. Searched as artist names.</small>
+
+        <label for="genres">Genres <span class="muted">(optional)</span></label>
+        <input id="genres" name="genres" type="text"
+               placeholder="e.g. indie, folk, hip hop" />
+
+        <label for="moods">Moods <span class="muted">(optional)</span></label>
+        <input id="moods" name="moods" type="text"
+               placeholder="e.g. mellow, energetic, dreamy" />
+
+        <label for="tags">Other tags <span class="muted">(optional)</span></label>
+        <input id="tags" name="tags" type="text"
+               placeholder="e.g. summer, 80s, road trip" />
+
+        <!-- Sliders ----------------------------------------------- -->
+        <div class="sliders">
+          <div class="slider-row">
+            <label for="content_weight">
+              Content similarity
+              <span class="value" id="content_weight_v">0.50</span>
+            </label>
+            <input id="content_weight" name="content_weight"
+                   type="range" min="0" max="1" step="0.05" value="0.50" />
+            <small class="muted">0 = purely retrieval rank · 1 = purely artist/tag similarity</small>
+          </div>
+
+          <div class="slider-row">
+            <label for="novelty">
+              Novelty
+              <span class="value" id="novelty_v">0.30</span>
+            </label>
+            <input id="novelty" name="novelty"
+                   type="range" min="0" max="1" step="0.05" value="0.30" />
+            <small class="muted">0 = obvious picks · 1 = explore the long tail</small>
+          </div>
+
+          <div class="slider-row">
+            <label for="diversity">
+              Diversity
+              <span class="value" id="diversity_v">0.30</span>
+            </label>
+            <input id="diversity" name="diversity"
+                   type="range" min="0" max="1" step="0.05" value="0.30" />
+            <small class="muted">MMR rerank · spread artists and tags</small>
+          </div>
+
+          <div class="slider-row">
+            <label for="k">
+              How many (k)
+              <span class="value" id="k_v">10</span>
+            </label>
+            <input id="k" name="k"
+                   type="range" min="1" max="20" step="1" value="10" />
+          </div>
+        </div>
+
+        <div class="actions">
+          <button type="submit" id="submit-btn" class="primary">
+            Get recommendations
+          </button>
+          <button type="button" id="example-btn" class="secondary">
+            Try an example
+          </button>
+        </div>
+
+        <div class="error" id="error" hidden></div>
+
+        <!-- Advanced / developer panel -------------------------- -->
+        <details class="advanced">
+          <summary>Advanced (developer · KGRec research layer)</summary>
+          <p class="muted">
+            The KGRec ALS model is the <em>research</em> layer. It can only
+            score the 8&nbsp;640 KGRec items, so it cannot recommend real
+            songs by name. This panel calls
+            <code>POST&nbsp;/api/kgrec-recommend</code> directly with KGRec
+            item IDs, bypassing the NetEase product layer. For developers
+            inspecting the trained model only.
+          </p>
+          <label for="seed_ids_raw">KGRec seed item IDs</label>
+          <input id="seed_ids_raw" type="text" placeholder="e.g. 1679, 2076, 5094" />
+          <label for="favorite_ids_raw">KGRec favourite item IDs</label>
+          <input id="favorite_ids_raw" type="text" placeholder="e.g. 2502" />
+          <label for="kgrec_tags">KGRec tags (comma-separated)</label>
+          <input id="kgrec_tags" type="text" placeholder="e.g. indie, mellow, 80s" />
+          <button type="button" id="kgrec-btn" class="secondary kgrec-btn">
+            Run KGRec model (debug)
+          </button>
+        </details>
+      </form>
+    </section>
+
+    <!-- ---------------------------------------------------------- -->
+    <!-- Right column: response                                     -->
+    <!-- ---------------------------------------------------------- -->
+    <section class="panel results-panel">
+      <div class="results-header">
+        <h2>Recommendations</h2>
+        <div class="results-meta" id="results-meta" hidden></div>
+      </div>
+
+      <div id="empty-state" class="empty">
+        <p>Submit the form to see ranked real-song recommendations here.</p>
+        <p class="muted">
+          Each card carries a title, artist, album, cover art, and a
+          link to NetEase. Cards are labelled
+          <span class="pick pick-safe">safe</span>,
+          <span class="pick pick-exploratory">exploratory</span>, or
+          <span class="pick pick-diverse">diverse</span> so you can
+          tell which picks are obvious and which are the system
+          stretching.
+        </p>
+      </div>
+
+      <div id="loading" class="loading" hidden>
+        <div class="spinner"></div>
+        <p>Searching NetEase &amp; ranking candidates…</p>
+      </div>
+
+      <div id="profile-summary" class="seed-summary" hidden></div>
+
+      <ol id="cards" class="cards"></ol>
+
+      <!-- Optional KGRec debug response --------------------------- -->
+      <ol id="kgrec-cards" class="cards kgrec-cards" hidden></ol>
+    </section>
+  </main>
+
+  <footer class="footer">
+    <span id="model-info" class="muted">model: —</span>
+    <span class="muted">Local demo · binds to 127.0.0.1 only</span>
+  </footer>
+
+  <script src="/app.js"></script>
+</body>
+</html>

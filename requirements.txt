@@ -1,0 +1,7 @@
+# Demo-only dependency.
+#
+# The recommender engine, ALS model, content-based model, evaluation
+# pipeline, preprocessing outputs, and saved validation results have
+# zero dependency on Flask -- it is a thin HTTP wrapper used only by
+# this folder. Everything else still lives in `../requirements.txt`.
+flask>=3.0
