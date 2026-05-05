@@ -33,6 +33,9 @@ KGRec-dataset/
 # Nested local repository placeholder
 SongRecDemo/
 
+# Third-party services vendored locally (NetEase Cloud Music API, etc.)
+vendor/
+
 # Notebooks and OS/editor noise
 .ipynb_checkpoints/
 .DS_Store
