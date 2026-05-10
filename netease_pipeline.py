@@ -509,6 +509,7 @@ class _SourceHit:
 @dataclass
 class _Candidate:
     track: TrackRef
+    artist_ids: list[int] = field(default_factory=list)
     sources: list[str] = field(default_factory=list)
     # For each source, position is 0-indexed rank in that channel's hits.
     positions: dict[str, int] = field(default_factory=dict)
@@ -615,7 +616,8 @@ class NeteaseRecommender:
         self._max_tag_queries = int(max_tag_queries)
         self._max_title_queries = int(max_title_queries)
         self._per_artist_cap = int(per_artist_cap)
-        self._enrich_top_n = 30
+        self._enrich_top_n = 16
+        self._live_deep_enrichment = False
         self._min_comment_count = 10
         self._min_artist_follow_count = 77
 
@@ -653,7 +655,8 @@ class NeteaseRecommender:
         # 2. Lightweight score, then enrich the strongest candidates.
         scored = self._score_all(candidates_by_id, profile, req)
         scored.sort(key=lambda x: (-x[0], x[1].track.title or "", x[1].track.netease_song_id))
-        enriched_count = self._enrich_candidates([cand for _score, cand, _bd in scored[: self._enrich_top_n]])
+        enrich_n = self._enrichment_budget(req)
+        enriched_count = self._enrich_candidates([cand for _score, cand, _bd in scored[:enrich_n]])
         filtered_unplayable = self._filter_unplayable(candidates_by_id)
         filtered_low_trust = self._filter_low_trust(candidates_by_id)
         summary["enriched_count"] = int(enriched_count)
@@ -720,6 +723,8 @@ class NeteaseRecommender:
                 "soft_min_comment_count": self._min_comment_count,
                 "soft_min_artist_follow_count": self._min_artist_follow_count,
             },
+            "enrichment_live_budget": self._enrich_top_n,
+            "deep_live_enrichment": self._live_deep_enrichment,
             "research_layer":               "KGRec ALS/content/popularity evaluation remains separate",
             "source":                       "NetEase /search",
         }
@@ -781,19 +786,28 @@ class NeteaseRecommender:
         }
         return candidates, summary
 
+    def _enrichment_budget(self, req: RealSongRequest) -> int:
+        k = max(1, min(50, int(req.k)))
+        return max(6, min(self._enrich_top_n, k * 2))
+
     def _enrich_candidates(self, candidates: list[_Candidate]) -> int:
         enriched = 0
+        artist_follow_cache: dict[int, Optional[int]] = {}
         for cand in candidates:
             if cand.enrichment is not None:
                 if cand.enrichment.enriched:
                     enriched += 1
                 continue
-            cand.enrichment = self._enrich_one(cand)
+            cand.enrichment = self._enrich_one(cand, artist_follow_cache)
             if cand.enrichment.enriched:
                 enriched += 1
         return enriched
 
-    def _enrich_one(self, cand: _Candidate) -> _CandidateEnrichment:
+    def _enrich_one(
+        self,
+        cand: _Candidate,
+        artist_follow_cache: dict[int, Optional[int]],
+    ) -> _CandidateEnrichment:
         sid = int(cand.track.netease_song_id or 0)
         if not sid:
             return _CandidateEnrichment(endpoint_errors=["missing_song_id"])
@@ -839,42 +853,30 @@ class NeteaseRecommender:
                 or _maybe_int(dynamic.get("shareCount"))
             )
 
-        detail = self._netease_get("/song/detail", {"ids": f"[{sid}]"})
-        artist_ids: list[int] = []
-        if isinstance(detail, dict):
-            songs = detail.get("songs")
-            if isinstance(songs, list) and songs:
-                row = songs[0] if isinstance(songs[0], dict) else {}
-                artists = row.get("ar") or row.get("artists") or []
-                if isinstance(artists, list):
-                    for a in artists:
-                        if isinstance(a, dict):
-                            aid = _maybe_int(a.get("id"))
-                            if aid:
-                                artist_ids.append(aid)
-                pop = _maybe_int(row.get("pop"))
-                if pop is not None and enr.song_red_count is None:
-                    enr.song_red_count = pop
+        artist_ids = list(cand.artist_ids)
+        if not artist_ids or enr.song_red_count is None:
+            detail = self._netease_get("/song/detail", {"ids": f"[{sid}]"})
+            if isinstance(detail, dict):
+                songs = detail.get("songs")
+                if isinstance(songs, list) and songs:
+                    row = songs[0] if isinstance(songs[0], dict) else {}
+                    if not artist_ids:
+                        artists = row.get("ar") or row.get("artists") or []
+                        if isinstance(artists, list):
+                            for a in artists:
+                                if isinstance(a, dict):
+                                    aid = _maybe_int(a.get("id"))
+                                    if aid:
+                                        artist_ids.append(aid)
+                    pop = _maybe_int(row.get("pop"))
+                    if pop is not None and enr.song_red_count is None:
+                        enr.song_red_count = pop
 
         if artist_ids:
-            artist_detail = self._netease_get("/artist/detail", {"id": str(artist_ids[0])})
-            if isinstance(artist_detail, dict):
-                data = artist_detail.get("data") if isinstance(artist_detail.get("data"), dict) else artist_detail
-                stats = data.get("identify") if isinstance(data.get("identify"), dict) else {}
-                artist = data.get("artist") if isinstance(data.get("artist"), dict) else {}
-                enr.artist_follow_count = (
-                    _maybe_int(data.get("followCount"))
-                    or _maybe_int(data.get("fansCount"))
-                    or _maybe_int(stats.get("imageDesc"))
-                    or _maybe_int(artist.get("followCount"))
-                )
-            artist_dynamic = self._netease_get("/artist/detail/dynamic", {"id": str(artist_ids[0])})
-            if isinstance(artist_dynamic, dict) and enr.artist_follow_count is None:
-                enr.artist_follow_count = (
-                    _maybe_int(artist_dynamic.get("followCount"))
-                    or _maybe_int(artist_dynamic.get("fansCount"))
-                    or _maybe_int(artist_dynamic.get("subCount"))
-                )
+            artist_id = artist_ids[0]
+            if artist_id not in artist_follow_cache:
+                artist_follow_cache[artist_id] = self._artist_follow_count(artist_id)
+            enr.artist_follow_count = artist_follow_cache[artist_id]
 
         url_payload = self._netease_get("/song/url/v1", {"id": str(sid), "level": "standard"})
         if isinstance(url_payload, dict):
@@ -889,24 +891,49 @@ class NeteaseRecommender:
                 br = _maybe_int(row.get("br"))
                 enr.audio_quality = self._audio_quality(level, br)
 
-        lyric = self._netease_get("/lyric", {"id": str(sid)})
-        if isinstance(lyric, dict):
-            lrc = lyric.get("lrc") if isinstance(lyric.get("lrc"), dict) else {}
-            text = str(lrc.get("lyric") or "")
-            enr.lyric_excerpt = " ".join(_tokens(text)[:160])
+        if self._live_deep_enrichment:
+            lyric = self._netease_get("/lyric", {"id": str(sid)})
+            if isinstance(lyric, dict):
+                lrc = lyric.get("lrc") if isinstance(lyric.get("lrc"), dict) else {}
+                text = str(lrc.get("lyric") or "")
+                enr.lyric_excerpt = " ".join(_tokens(text)[:160])
 
-        simi = self._netease_get("/simi/song", {"id": str(sid)})
-        if isinstance(simi, dict):
-            songs = simi.get("songs")
-            if isinstance(songs, list):
-                for row in songs[:20]:
-                    if isinstance(row, dict):
-                        sim_id = _maybe_int(row.get("id"))
-                        if sim_id:
-                            enr.similar_song_ids.append(sim_id)
+            simi = self._netease_get("/simi/song", {"id": str(sid)})
+            if isinstance(simi, dict):
+                songs = simi.get("songs")
+                if isinstance(songs, list):
+                    for row in songs[:20]:
+                        if isinstance(row, dict):
+                            sim_id = _maybe_int(row.get("id"))
+                            if sim_id:
+                                enr.similar_song_ids.append(sim_id)
 
         self._cache_enrichment(cache_key, enr)
         return enr
+
+    def _artist_follow_count(self, artist_id: int) -> Optional[int]:
+        artist_detail = self._netease_get("/artist/detail", {"id": str(artist_id)})
+        if isinstance(artist_detail, dict):
+            data = artist_detail.get("data") if isinstance(artist_detail.get("data"), dict) else artist_detail
+            stats = data.get("identify") if isinstance(data.get("identify"), dict) else {}
+            artist = data.get("artist") if isinstance(data.get("artist"), dict) else {}
+            count = (
+                _maybe_int(data.get("followCount"))
+                or _maybe_int(data.get("fansCount"))
+                or _maybe_int(stats.get("imageDesc"))
+                or _maybe_int(artist.get("followCount"))
+            )
+            if count is not None:
+                return count
+
+        artist_dynamic = self._netease_get("/artist/detail/dynamic", {"id": str(artist_id)})
+        if isinstance(artist_dynamic, dict):
+            return (
+                _maybe_int(artist_dynamic.get("followCount"))
+                or _maybe_int(artist_dynamic.get("fansCount"))
+                or _maybe_int(artist_dynamic.get("subCount"))
+            )
+        return None
 
     def _cache_enrichment(self, cache_key: str, enr: _CandidateEnrichment) -> None:
         if self._cache is None:
@@ -1232,13 +1259,19 @@ class NeteaseRecommender:
                 album=str(h.get("album") or "").strip(),
                 cover_url=str(h.get("cover_url") or "").strip(),
             )
+            artist_ids = [
+                int(aid) for aid in (h.get("artist_ids") or [])
+                if _maybe_int(aid) is not None
+            ]
             cand = candidates.get(sid)
             if cand is None:
-                cand = _Candidate(track=track)
+                cand = _Candidate(track=track, artist_ids=artist_ids)
                 candidates[sid] = cand
             else:
                 # Prefer the richer track payload when both exist.
                 cand.track = _merge_track(cand.track, track)
+                if not cand.artist_ids and artist_ids:
+                    cand.artist_ids = artist_ids
             if source_name not in cand.sources:
                 cand.sources.append(source_name)
             # Keep the earliest position seen for a given source label.
