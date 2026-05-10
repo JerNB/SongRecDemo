@@ -185,11 +185,18 @@ class NeteaseAPIClient:
             title = str(s.get("name") or "").strip()
             artists_raw = s.get("artists") or s.get("ar") or []
             artist_names: list[str] = []
+            artist_ids: list[int] = []
             for a in artists_raw:
                 if isinstance(a, dict):
                     nm = a.get("name")
                     if nm:
                         artist_names.append(str(nm).strip())
+                    try:
+                        aid = int(a.get("id"))
+                    except (TypeError, ValueError):
+                        aid = 0
+                    if aid:
+                        artist_ids.append(aid)
             album = s.get("album") or s.get("al") or {}
             album_name = str(album.get("name") or "").strip() if isinstance(album, dict) else ""
             album_id = album.get("id") if isinstance(album, dict) else None
@@ -216,6 +223,7 @@ class NeteaseAPIClient:
                 "title": title,
                 "artist": "; ".join(artist_names),
                 "artists": artist_names,
+                "artist_ids": artist_ids,
                 "album": album_name,
                 "album_id": album_id,
                 "cover_url": cover_url,
