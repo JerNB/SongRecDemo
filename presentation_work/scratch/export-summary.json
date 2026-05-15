@@ -1,0 +1,12 @@
+{
+  "deck": "C:\\SeniorProj\\presentation_work\\output\\output.pptx",
+  "slideCount": 13,
+  "previews": "C:\\SeniorProj\\presentation_work\\scratch\\previews",
+  "layouts": "C:\\SeniorProj\\presentation_work\\scratch\\layouts",
+  "sources": [
+    "artifacts/results/final_report.txt",
+    "artifacts/results/comparison_table.md",
+    "SongRecDemo/README.md",
+    "docs/netease_api_setup.md"
+  ]
+}

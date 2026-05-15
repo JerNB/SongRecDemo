@@ -1,0 +1,1704 @@
+{
+  "schema": "openai.presentation.layout/v4",
+  "unit": "px",
+  "slide": {
+    "aid": "sl/sgs36q",
+    "id": "sgs36q",
+    "slide": 1,
+    "layoutId": "bd53d4cc-d098-4104-9228-014a179ce5d3",
+    "layoutName": "Title Slide",
+    "layoutType": "title",
+    "masterLayoutId": "4d71fb96-ce37-4e24-8e57-5c44e5c06881",
+    "masterLayoutName": "Master",
+    "backgroundColor": "#F8F6F0",
+    "frame": {
+      "left": 0,
+      "top": 0,
+      "width": 1920,
+      "height": 1080
+    }
+  },
+  "theme": {
+    "colorSchemeName": "ChatGPT",
+    "colors": {
+      "accent1": "#156082",
+      "accent2": "#E97132",
+      "accent3": "#196B24",
+      "accent4": "#0F9ED5",
+      "accent5": "#A02B93",
+      "accent6": "#4EA72E",
+      "bg1": "#FFFFFF",
+      "bg2": "#000000",
+      "tx1": "#1F1F1F",
+      "tx2": "#FFFFFF",
+      "dk1": "#000000",
+      "lt1": "#FFFFFF",
+      "dk2": "#0E2841",
+      "lt2": "#E8E8E8",
+      "hlink": "#467886",
+      "folHlink": "#96607D"
+    },
+    "typefaces": [
+      "+mn-lt"
+    ]
+  },
+  "inheritedLayers": [
+    {
+      "scope": "layout",
+      "id": "bd53d4cc-d098-4104-9228-014a179ce5d3",
+      "name": "Title Slide",
+      "type": "title",
+      "parentLayoutId": "4d71fb96-ce37-4e24-8e57-5c44e5c06881",
+      "elements": []
+    },
+    {
+      "scope": "master",
+      "id": "4d71fb96-ce37-4e24-8e57-5c44e5c06881",
+      "name": "Master",
+      "type": "master",
+      "elements": []
+    }
+  ],
+  "elements": [
+    {
+      "order": 1,
+      "kind": "shape",
+      "scope": "slide",
+      "aid": "sh/9w3m94fu",
+      "id": "1",
+      "name": "cover-kicker",
+      "bbox": [
+        110,
+        276,
+        872,
+        24
+      ],
+      "composeSource": {
+        "run": 1,
+        "path": "0.0.0"
+      },
+      "geometry": "rect",
+      "text": "Senior Project",
+      "textPreview": "Senior Project",
+      "resolvedFontSize": 19,
+      "resolvedTextStyle": {
+        "fontSize": 19,
+        "typeface": "+mn-lt",
+        "bold": true,
+        "alignment": "left"
+      },
+      "textLayout": {
+        "lineCount": 1,
+        "lines": [
+          {
+            "index": 1,
+            "text": "Senior Project"
+          }
+        ]
+      },
+      "paragraphs": [
+        {
+          "index": 1,
+          "text": "Senior Project",
+          "runs": [
+            {
+              "index": 1,
+              "text": "Senior Project",
+              "fontSize": 19,
+              "color": "#2F7D6D",
+              "bold": true
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "order": 2,
+      "kind": "shape",
+      "scope": "slide",
+      "aid": "sh/25kb6xkf",
+      "id": "2",
+      "name": "cover-title",
+      "bbox": [
+        110,
+        322,
+        764,
+        274
+      ],
+      "composeSource": {
+        "run": 1,
+        "path": "0.0.1"
+      },
+      "geometry": "rect",
+      "text": "Mini Spotify-like\nMusic Recommendation\nSystem",
+      "textPreview": "Mini Spotify-like | Music Recommendation | System",
+      "resolvedFontSize": 76,
+      "resolvedTextStyle": {
+        "fontSize": 76,
+        "typeface": "+mn-lt",
+        "bold": true,
+        "alignment": "left"
+      },
+      "textLayout": {
+        "lineCount": 3,
+        "lines": [
+          {
+            "index": 1,
+            "text": "Mini Spotify-like"
+          },
+          {
+            "index": 2,
+            "text": "Music Recommendation"
+          },
+          {
+            "index": 3,
+            "text": "System"
+          }
+        ]
+      },
+      "paragraphs": [
+        {
+          "index": 1,
+          "text": "Mini Spotify-like",
+          "runs": [
+            {
+              "index": 1,
+              "text": "Mini Spotify-like",
+              "fontSize": 76,
+              "color": "#18212B",
+              "bold": true
+            }
+          ]
+        },
+        {
+          "index": 2,
+          "text": "Music Recommendation",
+          "runs": [
+            {
+              "index": 1,
+              "text": "Music Recommendation",
+              "fontSize": 76,
+              "color": "#18212B",
+              "bold": true
+            }
+          ]
+        },
+        {
+          "index": 3,
+          "text": "System",
+          "runs": [
+            {
+              "index": 1,
+              "text": "System",
+              "fontSize": 76,
+              "color": "#18212B",
+              "bold": true
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "order": 3,
+      "kind": "shape",
+      "scope": "slide",
+      "aid": "sh/rqd4vmtw",
+      "id": "3",
+      "name": "cover-rule",
+      "bbox": [
+        110,
+        620,
+        280,
+        6
+      ],
+      "composeSource": {
+        "run": 1,
+        "path": "0.0.2"
+      },
+      "geometry": "rect",
+      "fillColor": "#2F7D6D",
+      "lineColor": "#2F7D6D",
+      "lineWidth": 0
+    },
+    {
+      "order": 4,
+      "kind": "shape",
+      "scope": "slide",
+      "aid": "sh/kzupwb2h",
+      "id": "4",
+      "name": "cover-promise",
+      "bbox": [
+        110,
+        650,
+        698,
+        106
+      ],
+      "composeSource": {
+        "run": 1,
+        "path": "0.0.3"
+      },
+      "geometry": "rect",
+      "text": "Comparing popularity, collaborative filtering, and tag-based recommendation as prediction and discovery systems.",
+      "textPreview": "Comparing popularity, collaborative filtering, and tag-based recommendation as prediction and discovery systems.",
+      "resolvedFontSize": 29,
+      "resolvedTextStyle": {
+        "fontSize": 29,
+        "typeface": "+mn-lt",
+        "alignment": "left"
+      },
+      "textLayout": {
+        "lineCount": 3,
+        "lines": [
+          {
+            "index": 1,
+            "text": "Comparing popularity, collaborative filtering, and"
+          },
+          {
+            "index": 2,
+            "text": "tag-based recommendation as prediction and discovery"
+          },
+          {
+            "index": 3,
+            "text": "systems."
+          }
+        ]
+      },
+      "paragraphs": [
+        {
+          "index": 1,
+          "text": "Comparing popularity, collaborative filtering, and tag-based recommendation as prediction and discovery systems.",
+          "runs": [
+            {
+              "index": 1,
+              "text": "Comparing popularity, collaborative filtering, and tag-based recommendation as prediction and discovery systems.",
+              "fontSize": 29,
+              "color": "#18212B"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "order": 5,
+      "kind": "shape",
+      "scope": "slide",
+      "aid": "sh/9knih4by",
+      "id": "5",
+      "name": "cover-question-text",
+      "bbox": [
+        1066,
+        372,
+        598,
+        152
+      ],
+      "composeSource": {
+        "run": 1,
+        "path": "0.1.0"
+      },
+      "geometry": "rect",
+      "text": "How does a music platform decide what song to recommend next?",
+      "textPreview": "How does a music platform decide what song to recommend next?",
+      "resolvedFontSize": 42,
+      "resolvedTextStyle": {
+        "fontSize": 42,
+        "typeface": "+mn-lt",
+        "bold": true,
+        "alignment": "left"
+      },
+      "textLayout": {
+        "lineCount": 3,
+        "lines": [
+          {
+            "index": 1,
+            "text": "How does a music platform"
+          },
+          {
+            "index": 2,
+            "text": "decide what song to recommend"
+          },
+          {
+            "index": 3,
+            "text": "next?"
+          }
+        ]
+      },
+      "paragraphs": [
+        {
+          "index": 1,
+          "text": "How does a music platform decide what song to recommend next?",
+          "runs": [
+            {
+              "index": 1,
+              "text": "How does a music platform decide what song to recommend next?",
+              "fontSize": 42,
+              "color": "#2F7D6D",
+              "bold": true
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "order": 6,
+      "kind": "shape",
+      "scope": "slide",
+      "aid": "sh/2t83itgf",
+      "id": "6",
+      "name": "flow-step-1",
+      "bbox": [
+        1066.64,
+        552,
+        178,
+        108
+      ],
+      "composeSource": {
+        "run": 1,
+        "path": "0.1.1.0"
+      },
+      "geometry": "roundRect",
+      "fillColor": "#FFFFFF",
+      "lineColor": "#446B8C",
+      "lineWidth": 1.5
+    },
+    {
+      "order": 7,
+      "kind": "shape",
+      "scope": "slide",
+      "aid": "sh/re1w7mp0",
+      "id": "7",
+      "bbox": [
+        1078,
+        592,
+        156,
+        28
+      ],
+      "composeSource": {
+        "run": 1,
+        "path": "0.1.1.0.0"
+      },
+      "geometry": "rect",
+      "text": "Popular",
+      "textPreview": "Popular",
+      "resolvedFontSize": 22,
+      "resolvedTextStyle": {
+        "fontSize": 22,
+        "typeface": "+mn-lt",
+        "bold": true,
+        "alignment": "center"
+      },
+      "textLayout": {
+        "lineCount": 1,
+        "lines": [
+          {
+            "index": 1,
+            "text": "Popular"
+          }
+        ]
+      },
+      "paragraphs": [
+        {
+          "index": 1,
+          "text": "Popular",
+          "runs": [
+            {
+              "index": 1,
+              "text": "Popular",
+              "fontSize": 22,
+              "color": "#18212B",
+              "bold": true,
+              "alignment": "center"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "order": 8,
+      "kind": "shape",
+      "scope": "slide",
+      "aid": "sh/gvy90je9",
+      "id": "8",
+      "bbox": [
+        1252,
+        590,
+        30,
+        32
+      ],
+      "composeSource": {
+        "run": 1,
+        "path": "0.1.1.1"
+      },
+      "geometry": "rect",
+      "text": "->",
+      "textPreview": "->",
+      "resolvedFontSize": 26,
+      "resolvedTextStyle": {
+        "fontSize": 26,
+        "typeface": "+mn-lt",
+        "bold": true,
+        "alignment": "center"
+      },
+      "textLayout": {
+        "lineCount": 1,
+        "lines": [
+          {
+            "index": 1,
+            "text": "->"
+          }
+        ]
+      },
+      "paragraphs": [
+        {
+          "index": 1,
+          "text": "->",
+          "runs": [
+            {
+              "index": 1,
+              "text": "->",
+              "fontSize": 26,
+              "color": "#18212B",
+              "bold": true,
+              "alignment": "center"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "order": 9,
+      "kind": "shape",
+      "scope": "slide",
+      "aid": "sh/9gr2p8nq",
+      "id": "9",
+      "name": "flow-step-2",
+      "bbox": [
+        1290.64,
+        552,
+        178,
+        108
+      ],
+      "composeSource": {
+        "run": 1,
+        "path": "0.1.1.2"
+      },
+      "geometry": "roundRect",
+      "fillColor": "#FFFFFF",
+      "lineColor": "#2F7D6D",
+      "lineWidth": 1.5
+    },
+    {
+      "order": 10,
+      "kind": "shape",
+      "scope": "slide",
+      "aid": "sh/dg7adsji",
+      "id": "10",
+      "bbox": [
+        1302,
+        592,
+        156,
+        28
+      ],
+      "composeSource": {
+        "run": 1,
+        "path": "0.1.1.2.0"
+      },
+      "geometry": "rect",
+      "text": "Similar users",
+      "textPreview": "Similar users",
+      "resolvedFontSize": 22,
+      "resolvedTextStyle": {
+        "fontSize": 22,
+        "typeface": "+mn-lt",
+        "bold": true,
+        "alignment": "center"
+      },
+      "textLayout": {
+        "lineCount": 1,
+        "lines": [
+          {
+            "index": 1,
+            "text": "Similar users"
+          }
+        ]
+      },
+      "paragraphs": [
+        {
+          "index": 1,
+          "text": "Similar users",
+          "runs": [
+            {
+              "index": 1,
+              "text": "Similar users",
+              "fontSize": 22,
+              "color": "#18212B",
+              "bold": true,
+              "alignment": "center"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "order": 11,
+      "kind": "shape",
+      "scope": "slide",
+      "aid": "sh/ovahoza1",
+      "id": "11",
+      "bbox": [
+        1476,
+        590,
+        30,
+        32
+      ],
+      "composeSource": {
+        "run": 1,
+        "path": "0.1.1.3"
+      },
+      "geometry": "rect",
+      "text": "->",
+      "textPreview": "->",
+      "resolvedFontSize": 26,
+      "resolvedTextStyle": {
+        "fontSize": 26,
+        "typeface": "+mn-lt",
+        "bold": true,
+        "alignment": "center"
+      },
+      "textLayout": {
+        "lineCount": 1,
+        "lines": [
+          {
+            "index": 1,
+            "text": "->"
+          }
+        ]
+      },
+      "paragraphs": [
+        {
+          "index": 1,
+          "text": "->",
+          "runs": [
+            {
+              "index": 1,
+              "text": "->",
+              "fontSize": 26,
+              "color": "#18212B",
+              "bold": true,
+              "alignment": "center"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "order": 12,
+      "kind": "shape",
+      "scope": "slide",
+      "aid": "sh/vahoza1g",
+      "id": "12",
+      "name": "flow-step-3",
+      "bbox": [
+        1514.64,
+        552,
+        178,
+        108
+      ],
+      "composeSource": {
+        "run": 1,
+        "path": "0.1.1.4"
+      },
+      "geometry": "roundRect",
+      "fillColor": "#FFFFFF",
+      "lineColor": "#C15D3A",
+      "lineWidth": 1.5
+    },
+    {
+      "order": 13,
+      "kind": "shape",
+      "scope": "slide",
+      "aid": "sh/6tovahoz",
+      "id": "13",
+      "bbox": [
+        1526,
+        592,
+        156,
+        28
+      ],
+      "composeSource": {
+        "run": 1,
+        "path": "0.1.1.4.0"
+      },
+      "geometry": "rect",
+      "text": "Similar songs",
+      "textPreview": "Similar songs",
+      "resolvedFontSize": 22,
+      "resolvedTextStyle": {
+        "fontSize": 22,
+        "typeface": "+mn-lt",
+        "bold": true,
+        "alignment": "center"
+      },
+      "textLayout": {
+        "lineCount": 1,
+        "lines": [
+          {
+            "index": 1,
+            "text": "Similar songs"
+          }
+        ]
+      },
+      "paragraphs": [
+        {
+          "index": 1,
+          "text": "Similar songs",
+          "runs": [
+            {
+              "index": 1,
+              "text": "Similar songs",
+              "fontSize": 22,
+              "color": "#18212B",
+              "bold": true,
+              "alignment": "center"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "order": 14,
+      "kind": "shape",
+      "scope": "slide",
+      "aid": "sh/d8v6psfi",
+      "id": "14",
+      "name": "cover-footer-text",
+      "bbox": [
+        110,
+        988,
+        1700,
+        16
+      ],
+      "composeSource": {
+        "run": 1,
+        "path": "0.2.0"
+      },
+      "geometry": "rect",
+      "text": "Presenter: [Your Name]  |  Course: [Course Name]  |  2026",
+      "textPreview": "Presenter: [Your Name]  |  Course: [Course Name]  |  2026",
+      "resolvedFontSize": 14,
+      "resolvedTextStyle": {
+        "fontSize": 14,
+        "typeface": "+mn-lt",
+        "alignment": "left"
+      },
+      "textLayout": {
+        "lineCount": 1,
+        "lines": [
+          {
+            "index": 1,
+            "text": "Presenter: [Your Name]  |  Course: [Course Name]  |  2026"
+          }
+        ]
+      },
+      "paragraphs": [
+        {
+          "index": 1,
+          "text": "Presenter: [Your Name]  |  Course: [Course Name]  |  2026",
+          "runs": [
+            {
+              "index": 1,
+              "text": "Presenter: [Your Name]  |  Course: [Course Name]  |  2026",
+              "fontSize": 14,
+              "color": "#18212B"
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "composeRuns": [
+    {
+      "index": 1,
+      "frame": {
+        "left": 0,
+        "top": 0,
+        "width": 1920,
+        "height": 1080
+      },
+      "baseUnit": 8,
+      "root": {
+        "path": "0",
+        "kind": "grid",
+        "name": "cover-root",
+        "requestedSize": {
+          "width": {
+            "mode": "fill",
+            "value": 1
+          },
+          "height": {
+            "mode": "fill",
+            "value": 1
+          }
+        },
+        "intrinsicSize": {
+          "width": 304,
+          "height": 198.8
+        },
+        "frame": {
+          "left": 0,
+          "top": 0,
+          "width": 1920,
+          "height": 1080
+        },
+        "children": [
+          {
+            "path": "0.0",
+            "kind": "column",
+            "name": "cover-lockup",
+            "requestedSize": {
+              "width": {
+                "mode": "fill",
+                "value": 1
+              },
+              "height": {
+                "mode": "hug"
+              }
+            },
+            "intrinsicSize": {
+              "width": 763.8,
+              "height": 444
+            },
+            "frame": {
+              "left": 110,
+              "top": 276,
+              "width": 872.64,
+              "height": 480
+            },
+            "children": [
+              {
+                "path": "0.0.0",
+                "kind": "text",
+                "name": "cover-kicker",
+                "requestedSize": {
+                  "width": {
+                    "mode": "fill",
+                    "value": 1
+                  },
+                  "height": {
+                    "mode": "hug"
+                  }
+                },
+                "intrinsicSize": {
+                  "width": 0,
+                  "height": 22.8
+                },
+                "frame": {
+                  "left": 110,
+                  "top": 276,
+                  "width": 872.64,
+                  "height": 22.8
+                },
+                "snappedFrame": {
+                  "left": 110,
+                  "top": 276,
+                  "width": 872,
+                  "height": 24
+                },
+                "children": [],
+                "text": "Senior Project",
+                "transform": "none",
+                "element": {
+                  "aid": "sh/9w3m94fu",
+                  "id": "1",
+                  "kind": "shape"
+                }
+              },
+              {
+                "path": "0.0.1",
+                "kind": "text",
+                "name": "cover-title",
+                "requestedSize": {
+                  "width": {
+                    "mode": "wrap",
+                    "max": 820
+                  },
+                  "height": {
+                    "mode": "hug"
+                  }
+                },
+                "intrinsicSize": {
+                  "width": 763.8,
+                  "height": 273.6
+                },
+                "frame": {
+                  "left": 110,
+                  "top": 322.8,
+                  "width": 763.8,
+                  "height": 273.6
+                },
+                "snappedFrame": {
+                  "left": 110,
+                  "top": 322,
+                  "width": 764,
+                  "height": 274
+                },
+                "children": [],
+                "text": "Mini Spotify-like\nMusic Recommendation\nSystem",
+                "transform": "none",
+                "element": {
+                  "aid": "sh/25kb6xkf",
+                  "id": "2",
+                  "kind": "shape"
+                }
+              },
+              {
+                "path": "0.0.2",
+                "kind": "rule",
+                "name": "cover-rule",
+                "requestedSize": {
+                  "width": {
+                    "mode": "fixed",
+                    "value": 280
+                  },
+                  "height": {
+                    "mode": "fixed",
+                    "value": 6
+                  }
+                },
+                "intrinsicSize": {
+                  "width": 280,
+                  "height": 6
+                },
+                "frame": {
+                  "left": 110,
+                  "top": 620.4,
+                  "width": 280,
+                  "height": 6
+                },
+                "snappedFrame": {
+                  "left": 110,
+                  "top": 620,
+                  "width": 280,
+                  "height": 6
+                },
+                "children": [],
+                "weight": 6,
+                "element": {
+                  "aid": "sh/rqd4vmtw",
+                  "id": "3",
+                  "kind": "shape"
+                }
+              },
+              {
+                "path": "0.0.3",
+                "kind": "text",
+                "name": "cover-promise",
+                "requestedSize": {
+                  "width": {
+                    "mode": "wrap",
+                    "max": 780
+                  },
+                  "height": {
+                    "mode": "hug"
+                  }
+                },
+                "intrinsicSize": {
+                  "width": 698.74,
+                  "height": 69.6
+                },
+                "frame": {
+                  "left": 110,
+                  "top": 650.4,
+                  "width": 698.74,
+                  "height": 104.4
+                },
+                "snappedFrame": {
+                  "left": 110,
+                  "top": 650,
+                  "width": 698,
+                  "height": 106
+                },
+                "children": [],
+                "text": "Comparing popularity, collaborative filtering, and tag-based recommendation as prediction and discovery systems.",
+                "transform": "none",
+                "element": {
+                  "aid": "sh/kzupwb2h",
+                  "id": "4",
+                  "kind": "shape"
+                }
+              }
+            ],
+            "padding": {
+              "top": 0,
+              "right": 0,
+              "bottom": 0,
+              "left": 0
+            },
+            "gap": 24,
+            "effectiveGap": 24,
+            "justifyOffset": 0,
+            "align": "start",
+            "justify": "start",
+            "contentFrame": {
+              "left": 110,
+              "top": 276,
+              "width": 872.64,
+              "height": 480
+            },
+            "items": [
+              {
+                "path": "0.0.0",
+                "frame": {
+                  "left": 110,
+                  "top": 276,
+                  "width": 872.64,
+                  "height": 22.8
+                }
+              },
+              {
+                "path": "0.0.1",
+                "frame": {
+                  "left": 110,
+                  "top": 322.8,
+                  "width": 763.8,
+                  "height": 273.6
+                }
+              },
+              {
+                "path": "0.0.2",
+                "frame": {
+                  "left": 110,
+                  "top": 620.4,
+                  "width": 280,
+                  "height": 6
+                }
+              },
+              {
+                "path": "0.0.3",
+                "frame": {
+                  "left": 110,
+                  "top": 650.4,
+                  "width": 698.74,
+                  "height": 104.4
+                }
+              }
+            ]
+          },
+          {
+            "path": "0.1",
+            "kind": "column",
+            "name": "cover-question",
+            "requestedSize": {
+              "width": {
+                "mode": "fill",
+                "value": 1
+              },
+              "height": {
+                "mode": "hug"
+              }
+            },
+            "intrinsicSize": {
+              "width": 598.94,
+              "height": 236.8
+            },
+            "frame": {
+              "left": 1066.64,
+              "top": 372,
+              "width": 743.36,
+              "height": 288
+            },
+            "children": [
+              {
+                "path": "0.1.0",
+                "kind": "text",
+                "name": "cover-question-text",
+                "requestedSize": {
+                  "width": {
+                    "mode": "wrap",
+                    "max": 680
+                  },
+                  "height": {
+                    "mode": "hug"
+                  }
+                },
+                "intrinsicSize": {
+                  "width": 598.94,
+                  "height": 100.8
+                },
+                "frame": {
+                  "left": 1066.64,
+                  "top": 372,
+                  "width": 598.94,
+                  "height": 151.2
+                },
+                "snappedFrame": {
+                  "left": 1066,
+                  "top": 372,
+                  "width": 598,
+                  "height": 152
+                },
+                "children": [],
+                "text": "How does a music platform decide what song to recommend next?",
+                "transform": "none",
+                "element": {
+                  "aid": "sh/9knih4by",
+                  "id": "5",
+                  "kind": "shape"
+                }
+              },
+              {
+                "path": "0.1.1",
+                "kind": "row",
+                "name": "flow",
+                "requestedSize": {
+                  "width": {
+                    "mode": "fill",
+                    "value": 1
+                  },
+                  "height": {
+                    "mode": "hug"
+                  }
+                },
+                "intrinsicSize": {
+                  "width": 626,
+                  "height": 108
+                },
+                "frame": {
+                  "left": 1066.64,
+                  "top": 551.2,
+                  "width": 743.36,
+                  "height": 108
+                },
+                "children": [
+                  {
+                    "path": "0.1.1.0",
+                    "kind": "panel",
+                    "name": "flow-step-1",
+                    "requestedSize": {
+                      "width": {
+                        "mode": "fixed",
+                        "value": 178
+                      },
+                      "height": {
+                        "mode": "fixed",
+                        "value": 108
+                      }
+                    },
+                    "intrinsicSize": {
+                      "width": 24,
+                      "height": 62.4
+                    },
+                    "frame": {
+                      "left": 1066.64,
+                      "top": 552,
+                      "width": 178,
+                      "height": 108
+                    },
+                    "snappedFrame": {
+                      "left": 1066.64,
+                      "top": 552,
+                      "width": 178,
+                      "height": 108
+                    },
+                    "children": [
+                      {
+                        "path": "0.1.1.0.0",
+                        "kind": "text",
+                        "requestedSize": {
+                          "width": {
+                            "mode": "fill",
+                            "value": 1
+                          },
+                          "height": {
+                            "mode": "hug"
+                          }
+                        },
+                        "intrinsicSize": {
+                          "width": 0,
+                          "height": 26.4
+                        },
+                        "frame": {
+                          "left": 1078,
+                          "top": 592,
+                          "width": 156,
+                          "height": 28
+                        },
+                        "snappedFrame": {
+                          "left": 1078,
+                          "top": 592,
+                          "width": 156,
+                          "height": 28
+                        },
+                        "children": [],
+                        "text": "Popular",
+                        "transform": "none",
+                        "element": {
+                          "aid": "sh/re1w7mp0",
+                          "id": "7",
+                          "kind": "shape"
+                        }
+                      }
+                    ],
+                    "padding": {
+                      "top": 18,
+                      "right": 12,
+                      "bottom": 18,
+                      "left": 12
+                    },
+                    "align": "center",
+                    "justify": "center",
+                    "contentFrame": {
+                      "left": 1078.64,
+                      "top": 570,
+                      "width": 154,
+                      "height": 72
+                    },
+                    "element": {
+                      "aid": "sh/2t83itgf",
+                      "id": "6",
+                      "kind": "shape"
+                    }
+                  },
+                  {
+                    "path": "0.1.1.1",
+                    "kind": "text",
+                    "requestedSize": {
+                      "width": {
+                        "mode": "fixed",
+                        "value": 30
+                      },
+                      "height": {
+                        "mode": "hug"
+                      }
+                    },
+                    "intrinsicSize": {
+                      "width": 30,
+                      "height": 31.2
+                    },
+                    "frame": {
+                      "left": 1252.64,
+                      "top": 590,
+                      "width": 30,
+                      "height": 32
+                    },
+                    "snappedFrame": {
+                      "left": 1252,
+                      "top": 590,
+                      "width": 30,
+                      "height": 32
+                    },
+                    "children": [],
+                    "text": "->",
+                    "transform": "none",
+                    "element": {
+                      "aid": "sh/gvy90je9",
+                      "id": "8",
+                      "kind": "shape"
+                    }
+                  },
+                  {
+                    "path": "0.1.1.2",
+                    "kind": "panel",
+                    "name": "flow-step-2",
+                    "requestedSize": {
+                      "width": {
+                        "mode": "fixed",
+                        "value": 178
+                      },
+                      "height": {
+                        "mode": "fixed",
+                        "value": 108
+                      }
+                    },
+                    "intrinsicSize": {
+                      "width": 24,
+                      "height": 62.4
+                    },
+                    "frame": {
+                      "left": 1290.64,
+                      "top": 552,
+                      "width": 178,
+                      "height": 108
+                    },
+                    "snappedFrame": {
+                      "left": 1290.64,
+                      "top": 552,
+                      "width": 178,
+                      "height": 108
+                    },
+                    "children": [
+                      {
+                        "path": "0.1.1.2.0",
+                        "kind": "text",
+                        "requestedSize": {
+                          "width": {
+                            "mode": "fill",
+                            "value": 1
+                          },
+                          "height": {
+                            "mode": "hug"
+                          }
+                        },
+                        "intrinsicSize": {
+                          "width": 0,
+                          "height": 26.4
+                        },
+                        "frame": {
+                          "left": 1302,
+                          "top": 592,
+                          "width": 156,
+                          "height": 28
+                        },
+                        "snappedFrame": {
+                          "left": 1302,
+                          "top": 592,
+                          "width": 156,
+                          "height": 28
+                        },
+                        "children": [],
+                        "text": "Similar users",
+                        "transform": "none",
+                        "element": {
+                          "aid": "sh/dg7adsji",
+                          "id": "10",
+                          "kind": "shape"
+                        }
+                      }
+                    ],
+                    "padding": {
+                      "top": 18,
+                      "right": 12,
+                      "bottom": 18,
+                      "left": 12
+                    },
+                    "align": "center",
+                    "justify": "center",
+                    "contentFrame": {
+                      "left": 1302.64,
+                      "top": 570,
+                      "width": 154,
+                      "height": 72
+                    },
+                    "element": {
+                      "aid": "sh/9gr2p8nq",
+                      "id": "9",
+                      "kind": "shape"
+                    }
+                  },
+                  {
+                    "path": "0.1.1.3",
+                    "kind": "text",
+                    "requestedSize": {
+                      "width": {
+                        "mode": "fixed",
+                        "value": 30
+                      },
+                      "height": {
+                        "mode": "hug"
+                      }
+                    },
+                    "intrinsicSize": {
+                      "width": 30,
+                      "height": 31.2
+                    },
+                    "frame": {
+                      "left": 1476.64,
+                      "top": 590,
+                      "width": 30,
+                      "height": 32
+                    },
+                    "snappedFrame": {
+                      "left": 1476,
+                      "top": 590,
+                      "width": 30,
+                      "height": 32
+                    },
+                    "children": [],
+                    "text": "->",
+                    "transform": "none",
+                    "element": {
+                      "aid": "sh/ovahoza1",
+                      "id": "11",
+                      "kind": "shape"
+                    }
+                  },
+                  {
+                    "path": "0.1.1.4",
+                    "kind": "panel",
+                    "name": "flow-step-3",
+                    "requestedSize": {
+                      "width": {
+                        "mode": "fixed",
+                        "value": 178
+                      },
+                      "height": {
+                        "mode": "fixed",
+                        "value": 108
+                      }
+                    },
+                    "intrinsicSize": {
+                      "width": 24,
+                      "height": 62.4
+                    },
+                    "frame": {
+                      "left": 1514.64,
+                      "top": 552,
+                      "width": 178,
+                      "height": 108
+                    },
+                    "snappedFrame": {
+                      "left": 1514.64,
+                      "top": 552,
+                      "width": 178,
+                      "height": 108
+                    },
+                    "children": [
+                      {
+                        "path": "0.1.1.4.0",
+                        "kind": "text",
+                        "requestedSize": {
+                          "width": {
+                            "mode": "fill",
+                            "value": 1
+                          },
+                          "height": {
+                            "mode": "hug"
+                          }
+                        },
+                        "intrinsicSize": {
+                          "width": 0,
+                          "height": 26.4
+                        },
+                        "frame": {
+                          "left": 1526,
+                          "top": 592,
+                          "width": 156,
+                          "height": 28
+                        },
+                        "snappedFrame": {
+                          "left": 1526,
+                          "top": 592,
+                          "width": 156,
+                          "height": 28
+                        },
+                        "children": [],
+                        "text": "Similar songs",
+                        "transform": "none",
+                        "element": {
+                          "aid": "sh/6tovahoz",
+                          "id": "13",
+                          "kind": "shape"
+                        }
+                      }
+                    ],
+                    "padding": {
+                      "top": 18,
+                      "right": 12,
+                      "bottom": 18,
+                      "left": 12
+                    },
+                    "align": "center",
+                    "justify": "center",
+                    "contentFrame": {
+                      "left": 1526.64,
+                      "top": 570,
+                      "width": 154,
+                      "height": 72
+                    },
+                    "element": {
+                      "aid": "sh/vahoza1g",
+                      "id": "12",
+                      "kind": "shape"
+                    }
+                  }
+                ],
+                "padding": {
+                  "top": 0,
+                  "right": 0,
+                  "bottom": 0,
+                  "left": 0
+                },
+                "gap": 8,
+                "effectiveGap": 8,
+                "justifyOffset": 0,
+                "align": "center",
+                "justify": "start",
+                "contentFrame": {
+                  "left": 1066.64,
+                  "top": 551.2,
+                  "width": 743.36,
+                  "height": 108
+                },
+                "items": [
+                  {
+                    "path": "0.1.1.0",
+                    "frame": {
+                      "left": 1066.64,
+                      "top": 552,
+                      "width": 178,
+                      "height": 108
+                    }
+                  },
+                  {
+                    "path": "0.1.1.1",
+                    "frame": {
+                      "left": 1252.64,
+                      "top": 590,
+                      "width": 30,
+                      "height": 32
+                    }
+                  },
+                  {
+                    "path": "0.1.1.2",
+                    "frame": {
+                      "left": 1290.64,
+                      "top": 552,
+                      "width": 178,
+                      "height": 108
+                    }
+                  },
+                  {
+                    "path": "0.1.1.3",
+                    "frame": {
+                      "left": 1476.64,
+                      "top": 590,
+                      "width": 30,
+                      "height": 32
+                    }
+                  },
+                  {
+                    "path": "0.1.1.4",
+                    "frame": {
+                      "left": 1514.64,
+                      "top": 552,
+                      "width": 178,
+                      "height": 108
+                    }
+                  }
+                ]
+              }
+            ],
+            "padding": {
+              "top": 0,
+              "right": 0,
+              "bottom": 0,
+              "left": 0
+            },
+            "gap": 28,
+            "effectiveGap": 28,
+            "justifyOffset": 0,
+            "align": "start",
+            "justify": "start",
+            "contentFrame": {
+              "left": 1066.64,
+              "top": 372,
+              "width": 743.36,
+              "height": 288
+            },
+            "items": [
+              {
+                "path": "0.1.0",
+                "frame": {
+                  "left": 1066.64,
+                  "top": 372,
+                  "width": 598.94,
+                  "height": 151.2
+                }
+              },
+              {
+                "path": "0.1.1",
+                "frame": {
+                  "left": 1066.64,
+                  "top": 551.2,
+                  "width": 743.36,
+                  "height": 108
+                }
+              }
+            ]
+          },
+          {
+            "path": "0.2",
+            "kind": "row",
+            "name": "cover-footer",
+            "requestedSize": {
+              "width": {
+                "mode": "fill",
+                "value": 1
+              },
+              "height": {
+                "mode": "hug"
+              }
+            },
+            "intrinsicSize": {
+              "width": 0,
+              "height": 16.8
+            },
+            "frame": {
+              "left": 110,
+              "top": 988,
+              "width": 1700,
+              "height": 16
+            },
+            "children": [
+              {
+                "path": "0.2.0",
+                "kind": "text",
+                "name": "cover-footer-text",
+                "requestedSize": {
+                  "width": {
+                    "mode": "fill",
+                    "value": 1
+                  },
+                  "height": {
+                    "mode": "hug"
+                  }
+                },
+                "intrinsicSize": {
+                  "width": 0,
+                  "height": 16.8
+                },
+                "frame": {
+                  "left": 110,
+                  "top": 988,
+                  "width": 1700,
+                  "height": 16
+                },
+                "snappedFrame": {
+                  "left": 110,
+                  "top": 988,
+                  "width": 1700,
+                  "height": 16
+                },
+                "children": [],
+                "text": "Presenter: [Your Name]  |  Course: [Course Name]  |  2026",
+                "transform": "none",
+                "element": {
+                  "aid": "sh/d8v6psfi",
+                  "id": "14",
+                  "kind": "shape"
+                }
+              }
+            ],
+            "padding": {
+              "top": 0,
+              "right": 0,
+              "bottom": 0,
+              "left": 0
+            },
+            "gap": 0,
+            "effectiveGap": 0,
+            "justifyOffset": 0,
+            "align": "center",
+            "justify": "start",
+            "contentFrame": {
+              "left": 110,
+              "top": 988,
+              "width": 1700,
+              "height": 16
+            },
+            "items": [
+              {
+                "path": "0.2.0",
+                "frame": {
+                  "left": 110,
+                  "top": 988,
+                  "width": 1700,
+                  "height": 16
+                }
+              }
+            ]
+          }
+        ],
+        "padding": {
+          "top": 76,
+          "right": 110,
+          "bottom": 76,
+          "left": 110
+        },
+        "columnGap": 84,
+        "rowGap": 30,
+        "alignItems": "center",
+        "justifyItems": "stretch",
+        "contentFrame": {
+          "left": 110,
+          "top": 76,
+          "width": 1700,
+          "height": 928
+        },
+        "columns": [
+          {
+            "mode": "fr",
+            "value": 1.08
+          },
+          {
+            "mode": "fr",
+            "value": 0.92
+          }
+        ],
+        "rows": [
+          {
+            "mode": "fr",
+            "value": 1
+          },
+          "auto"
+        ],
+        "autoRows": "auto",
+        "resolvedRows": [
+          {
+            "mode": "fr",
+            "value": 1
+          },
+          "auto"
+        ],
+        "columnSizes": [
+          872.64,
+          743.36
+        ],
+        "rowSizes": [
+          881.2,
+          16.8
+        ],
+        "cells": [
+          {
+            "path": "0.0",
+            "column": 0,
+            "row": 0,
+            "columnSpan": 1,
+            "rowSpan": 1,
+            "cellFrame": {
+              "left": 110,
+              "top": 76,
+              "width": 872.64,
+              "height": 881.2
+            }
+          },
+          {
+            "path": "0.1",
+            "column": 1,
+            "row": 0,
+            "columnSpan": 1,
+            "rowSpan": 1,
+            "cellFrame": {
+              "left": 1066.64,
+              "top": 76,
+              "width": 743.36,
+              "height": 881.2
+            }
+          },
+          {
+            "path": "0.2",
+            "column": 0,
+            "row": 1,
+            "columnSpan": 2,
+            "rowSpan": 1,
+            "cellFrame": {
+              "left": 110,
+              "top": 987.2,
+              "width": 1700,
+              "height": 16.8
+            }
+          }
+        ]
+      }
+    }
+  ]
+}
