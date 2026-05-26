@@ -14,7 +14,20 @@ The rest of this subpackage is internal detail:
 The interface is deliberately frontend-agnostic: the same dataclasses
 serialise straight to JSON for an HTTP/gRPC/whatever transport, and the
 service can be imported directly by a Streamlit/FastAPI/Flask demo.
+
+Implementation note
+---------------------
+:class:`RecommendationService` is imported **lazily** (see :func:`__getattr__`)
+so that ``from src.personalization.netease_enrichment import NeteaseAPIClient``
+does not pull in scikit-learn / SciPy at package import time.  That keeps
+lightweight demos (e.g. ``SongRecDemo/app.py``) fast until code actually
+references ``RecommendationService``.
 """
+
+from __future__ import annotations
+
+import importlib
+from typing import Any
 
 from src.personalization.interface import (
     SeedInput,
@@ -22,7 +35,6 @@ from src.personalization.interface import (
     ScoredItem,
     RecommendationResponse,
 )
-from src.personalization.service import RecommendationService
 from src.personalization.enrichment import (
     MetadataEnricher,
     NullEnricher,
@@ -49,3 +61,17 @@ __all__ = [
     "NeteaseAPIError",
     "NeteaseCache",
 ]
+
+
+def __getattr__(name: str) -> Any:
+    """Lazy-load :class:`RecommendationService` (heavy sklearn/scipy import)."""
+    if name == "RecommendationService":
+        mod = importlib.import_module("src.personalization.service")
+        svc = getattr(mod, "RecommendationService")
+        globals()["RecommendationService"] = svc
+        return svc
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
+
+
+def __dir__() -> list[str]:
+    return sorted(set(__all__) | {k for k in globals() if not k.startswith("_")})

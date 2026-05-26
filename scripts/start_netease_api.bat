@@ -41,10 +41,9 @@ if not exist "%API_DIR%\node_modules" (
 )
 
 echo [INFO ] Starting NetEase Cloud Music API at http://localhost:3000
+echo [INFO ] Skipping upstream version check so local startup is not blocked by npm/network.
 echo [INFO ] Leave this window open while using the demo.
 echo.
-pushd "%API_DIR%" >nul
-node app.js
-popd >nul
+node "%ROOT%\scripts\start_netease_api_local.js"
 
 endlocal
