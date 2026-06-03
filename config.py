@@ -230,3 +230,64 @@ NETEASE_SEARCH_LIMIT: int = int(_os.environ.get("NETEASE_SEARCH_LIMIT", "5"))
 NETEASE_MIN_CONFIDENCE: float = float(
     _os.environ.get("NETEASE_MIN_CONFIDENCE", "0.40")
 )
+
+# ---------------------------------------------------------------------------
+# Product-layer ranking weights (NetEase real-song pipeline)
+# ---------------------------------------------------------------------------
+#
+# These weights drive the Ranker inside SongRecDemo/netease_pipeline.py.
+# They are deliberately centralised here so the scoring blend can be tuned
+# in one place instead of being scattered as magic numbers across scoring
+# functions.
+#
+# How the pieces fit together
+# ---------------------------
+# Per candidate the Ranker computes three normalised sub-scores in [0, 1]:
+#
+#   content_score   -- text similarity + artist / tag / title overlap with
+#                      the user's stated taste. "Do the words match?"
+#   retrieval_score -- retrieval confidence + multi-source agreement across
+#                      independent search channels. "How sure is recall?"
+#   quality_score   -- popularity, artist authority, playability, metadata
+#                      completeness. "Is this a real, healthy track?"
+#
+# The per-request ``content_weight`` slider blends the first two:
+#
+#   personalized_relevance = content_weight * content_score
+#                          + (1 - content_weight) * retrieval_score
+#
+# A high content_weight makes recommendations lean on the user's text /
+# liked songs / artists / tags / genres; a low content_weight makes them
+# lean on retrieval confidence, multi-channel agreement, and platform
+# signals. The ``base`` block below then mixes personalized_relevance with
+# overall quality and a small standalone artist-authority term.
+RANKING_WEIGHTS_V1: dict[str, dict[str, float]] = {
+    "base": {
+        "personalized_relevance": 0.70,
+        "quality": 0.20,
+        "artist_authority": 0.10,
+    },
+    "content": {
+        "text_similarity": 0.40,
+        "artist_match": 0.25,
+        "tag_match": 0.25,
+        "title_match": 0.10,
+    },
+    "retrieval": {
+        "retrieval_confidence": 0.60,
+        "multi_source_agreement": 0.40,
+    },
+    "quality": {
+        "popularity": 0.35,
+        "artist_authority": 0.30,
+        "playable": 0.20,
+        "metadata_quality": 0.15,
+    },
+}
+
+# Relevance gate for the novelty bonus. novelty_bonus is multiplied by
+# ``min(1, base_relevance / RANKING_RELEVANCE_GATE_DIVISOR)`` so a novel but
+# low-relevance candidate cannot leapfrog genuinely relevant ones. Lower the
+# divisor to let novelty kick in earlier; raise it to demand more relevance
+# before novelty counts.
+RANKING_RELEVANCE_GATE_DIVISOR: float = 0.55
