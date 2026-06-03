@@ -144,6 +144,12 @@ def _holocene_query() -> list[dict[str, Any]]:
         {"netease_song_id": 44346, "title": "Holocene (Cover)",
          "artist": "Indie Cindy", "artists": ["Indie Cindy"],
          "album": "Covers Vol 1", "cover_url": "https://example/cover.jpg"},
+        {"netease_song_id": 44347, "title": "Holocene Guitar Cover",
+         "artist": "Bedroom Upload", "artists": ["Bedroom Upload"],
+         "album": "Covers Vol 2", "cover_url": "https://example/guitar-cover.jpg"},
+        {"netease_song_id": 44348, "title": "Holocene Piano Version by Jane",
+         "artist": "Jane Player", "artists": ["Jane Player"],
+         "album": "Piano Covers", "cover_url": "https://example/piano-cover.jpg"},
     ]
 
 
@@ -161,6 +167,12 @@ def _tag_traps() -> list[dict[str, Any]]:
         {"netease_song_id": 55348, "title": "Midnight Exit",
          "artist": "Actual Band", "artists": ["Actual Band"],
          "album": "Static Flowers", "cover_url": "https://example/midnight.jpg"},
+        {"netease_song_id": 55349, "title": "Sad Song",
+         "artist": "Title Matcher", "artists": ["Title Matcher"],
+         "album": "Literal Matches", "cover_url": "https://example/sad-song.jpg"},
+        {"netease_song_id": 55350, "title": "Alternative Rock Nights",
+         "artist": "Title Matcher", "artists": ["Title Matcher"],
+         "album": "Literal Matches", "cover_url": "https://example/alt-rock-nights.jpg"},
     ]
 
 
@@ -438,11 +450,14 @@ def test_recommend_filters_same_liked_title(client) -> None:
     })
     _expect(res.status_code == 200, f"recommend returned {res.status_code}")
     data = (res.get_json() or {})["data"]
+    blocked_ids = {12345, 44344, 44345, 44346, 44347, 44348}
     for it in data.get("items") or []:
         _expect(_norm_title(it.get("title") or "") != "holocene",
                 f"same-title liked song leaked into recommendations: {it}")
+        _expect(int(it.get("netease_song_id") or 0) not in blocked_ids,
+                f"same-title cover/version leaked into recommendations: {it}")
     cs = data.get("candidate_summary") or {}
-    _expect(int(cs.get("filtered_same_title") or 0) >= 2,
+    _expect(int(cs.get("filtered_same_title") or 0) >= 4,
             f"same-title filter did not report filtered candidates: {cs}")
 
 
@@ -456,15 +471,18 @@ def test_recommend_filters_literal_tag_titles(client) -> None:
     _expect(res.status_code == 200, f"recommend returned {res.status_code}")
     data = (res.get_json() or {})["data"]
     literal_tag_titles = {"sad", "alternative rock", "rock"}
+    blocked_ids = {55345, 55346, 55347, 55349, 55350}
     for it in data.get("items") or []:
         title_key = _norm_title(it.get("title") or "")
         _expect(title_key not in literal_tag_titles,
                 f"literal tag-title candidate leaked into recommendations: {it}")
+        _expect(int(it.get("netease_song_id") or 0) not in blocked_ids,
+                f"title-only tag match leaked into recommendations: {it}")
         if title_key in literal_tag_titles:
             _expect(it.get("pick_type") != "safe",
                     f"literal tag-title candidate was marked safe: {it}")
     cs = data.get("candidate_summary") or {}
-    _expect(int(cs.get("filtered_tag_title") or 0) >= 3,
+    _expect(int(cs.get("filtered_tag_title") or 0) >= 5,
             f"tag-title filter did not report filtered candidates: {cs}")
 
 

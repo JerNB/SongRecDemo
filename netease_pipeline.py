@@ -247,7 +247,7 @@ _VERSION_WORDS = frozenset({
     "karaoke", "mono", "stereo", "remix", "version", "edit",
     "mix", "remastered", "remaster",
 })
-_TITLE_SUFFIX_RE = re.compile(r"[\(\[\{（【].*?[\)\]\}）】]")
+_TITLE_SUFFIX_RE = re.compile("[\\(\\[\\{\uff08\u3010].*?[\\)\\]\\}\uff09\u3011]")
 
 
 def _tokens(text: Optional[str]) -> list[str]:
@@ -297,6 +297,25 @@ def _norm_title(title: str) -> str:
             break
     key = " ".join(_tokens(without_brackets))
     return key or " ".join(_tokens(raw))
+
+
+def _starts_with_tokens(values: list[str], prefix: list[str]) -> bool:
+    return bool(prefix) and len(values) >= len(prefix) and values[: len(prefix)] == prefix
+
+
+def _contains_tokens(values: list[str], phrase: list[str]) -> bool:
+    if not phrase or len(values) < len(phrase):
+        return False
+    limit = len(values) - len(phrase) + 1
+    return any(values[i:i + len(phrase)] == phrase for i in range(limit))
+
+
+def _strip_profile_tag_terms(title: str, profile_tag_tokens: Iterable[str]) -> str:
+    """Remove user tag words from a title before text-sim scoring."""
+    tag_terms = set(profile_tag_tokens)
+    if not tag_terms:
+        return title or ""
+    return " ".join(t for t in _tokens(title) if t not in tag_terms)
 
 
 def _dedupe_phrases(values: Iterable[str]) -> list[str]:
@@ -1113,7 +1132,7 @@ class NeteaseRecommender:
             return 0
         dropped = 0
         for sid, cand in list(candidates.items()):
-            if _norm_title(cand.track.title) in profile.liked_title_norms:
+            if NeteaseRecommender._is_liked_title_variant(cand.track.title, profile):
                 candidates.pop(sid, None)
                 dropped += 1
         return dropped
@@ -1181,6 +1200,28 @@ class NeteaseRecommender:
     def _has_version_word(text: str) -> bool:
         return bool(set(_raw_tokens(text)) & _VERSION_WORDS)
 
+    @staticmethod
+    def _is_liked_title_variant(title: str, profile: _Profile) -> bool:
+        """Catch covers/versions of songs the user already selected."""
+        if not title or not profile.liked_title_norms:
+            return False
+        if _norm_title(title) in profile.liked_title_norms:
+            return True
+
+        raw_tokens = _raw_tokens(title)
+        has_version_hint = bool(set(raw_tokens) & _VERSION_WORDS)
+        if not has_version_hint:
+            return False
+
+        semantic_tokens = [t for t in raw_tokens if t not in _STOP]
+        for liked_key in profile.liked_title_norms:
+            liked_tokens = liked_key.split()
+            if _starts_with_tokens(semantic_tokens, liked_tokens):
+                return True
+            if _contains_tokens(semantic_tokens, liked_tokens):
+                return True
+        return False
+
     def _search_cached(self, query: str, limit: int) -> list[dict[str, Any]]:
         """Cache-first NetEase /search. Returns [] on empty / failure."""
         q = (query or "").strip()
@@ -1216,11 +1257,6 @@ class NeteaseRecommender:
         the user's taste, so tag/discovery-only candidates whose whole
         title is just the requested tag vocabulary are filtered.
         """
-        source_kinds = {h.source_type for h in cand.source_hits}
-        weak_tag_sources = {"genre", "mood", "tag", "genre_mood", "tag_combo", "discovery"}
-        if source_kinds - weak_tag_sources:
-            return False
-
         title_key = _norm_title(cand.track.title)
         if not title_key:
             return False
@@ -1232,7 +1268,17 @@ class NeteaseRecommender:
 
         title_tokens = set(_tokens(cand.track.title))
         tag_tokens = set(profile.tag_tokens)
-        return bool(title_tokens) and title_tokens <= tag_tokens
+        title_tag_hits = title_tokens & tag_tokens
+        if not title_tag_hits:
+            return False
+
+        source_kinds = {h.source_type for h in cand.source_hits}
+        weak_tag_sources = {"genre", "mood", "tag", "genre_mood", "tag_combo", "discovery"}
+        if source_kinds - weak_tag_sources:
+            return False
+
+        non_title_tokens = _token_set(cand.track.artist) | _token_set(cand.track.album)
+        return not bool(non_title_tokens & tag_tokens)
 
     @staticmethod
     def _merge_hits(
@@ -1449,7 +1495,7 @@ class NeteaseRecommender:
             if ptoks and ptoks <= set(_tokens(source_queries)):
                 inferred.append(phrase)
         return _profile_text([
-            cand.track.title,
+            _strip_profile_tag_terms(cand.track.title, profile.tag_tokens),
             cand.track.artist,
             " ".join(cand.track.artists or []),
             cand.track.album,

@@ -719,17 +719,33 @@ def main(argv: Optional[list[str]] = None) -> int:
         level=logging.INFO,
         format="%(asctime)s  %(levelname)-8s  %(name)s  %(message)s",
         datefmt="%H:%M:%S",
+        force=True,
     )
     args = _parse_args(argv if argv is not None else sys.argv[1:])
 
+    # IDE / piped runs often buffer stdout; unbuffered hints help when
+    # startup looks "stuck" on the NetEase ping or heavy imports.
+    print(
+        "SongRecDemo: starting (imports + NetEase probe; "
+        "this can take ~5–15s if http://localhost:3000 is down) …",
+        file=sys.stderr,
+        flush=True,
+    )
     app = create_app(
         netease_base_url=args.netease_base_url,
         load_kgrec=(not args.no_kgrec),
         eager=True,
     )
 
-    log.info("Starting demo server on http://%s:%d", args.host, args.port)
+    url = f"http://{args.host}:{args.port}"
+    log.info("Starting demo server on %s", url)
     log.info("Open the URL in your browser. Press Ctrl+C to stop.")
+    print(
+        f"SongRecDemo: server ready — open {url} in a browser. "
+        "This terminal stays busy until you press Ctrl+C.",
+        file=sys.stderr,
+        flush=True,
+    )
     app.run(host=args.host, port=args.port, debug=args.debug, use_reloader=False)
     return 0
 
