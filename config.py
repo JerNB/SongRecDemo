@@ -291,3 +291,64 @@ RANKING_WEIGHTS_V1: dict[str, dict[str, float]] = {
 # divisor to let novelty kick in earlier; raise it to demand more relevance
 # before novelty counts.
 RANKING_RELEVANCE_GATE_DIVISOR: float = 0.55
+
+# ---------------------------------------------------------------------------
+# P2: local song_feature_store + embedding recall channel
+# ---------------------------------------------------------------------------
+#
+# The product layer keeps a small local feature store of every NetEase song
+# it has ever seen (title / artists / album / platform signals + a stable
+# content text per song). On top of that store sits an OPTIONAL second
+# retrieval channel -- ``embedding_recall`` -- that finds songs whose content
+# text is semantically close to the user's profile text. This makes the
+# recommender progressively less dependent on live NetEase /search as the
+# local catalogue grows.
+#
+# Crucially, this is an ADDITIVE recall channel: it never replaces the
+# NetEase search channel and never touches the P0 ranking formula. Its hits
+# are merged into the same candidate pool by song_id, so a song surfaced by
+# both channels simply gains extra source hits (raising multi_source_agreement
+# naturally). Final ordering is still decided by the unchanged P0 Ranker.
+
+# Master switch for the embedding recall channel.
+EMBEDDING_RECALL_ENABLED: bool = (
+    _os.environ.get("EMBEDDING_RECALL_ENABLED", "1").strip().lower()
+    not in {"0", "false", "no", "off"}
+)
+
+# How many semantically-similar songs the embedding channel recalls.
+EMBEDDING_RECALL_TOP_K: int = int(_os.environ.get("EMBEDDING_RECALL_TOP_K", "30"))
+
+# Reliability assigned to embedding-channel SourceHits. Deliberately in the
+# 0.60-0.75 band: a semantic match is decent evidence but weaker than an exact
+# artist hit (0.85). Used by the P0 retrieval_confidence sub-score unchanged.
+EMBEDDING_RECALL_RELIABILITY: float = float(
+    _os.environ.get("EMBEDDING_RECALL_RELIABILITY", "0.68")
+)
+
+# Minimum number of songs the local store must hold before the embedding
+# index is built / queried. Below this we skip embedding recall to avoid
+# small-sample mis-recall (and to avoid the cold-start case where the store
+# is empty -- the system then runs on NetEase search alone, no errors).
+EMBEDDING_MIN_CORPUS_SIZE: int = int(
+    _os.environ.get("EMBEDDING_MIN_CORPUS_SIZE", "20")
+)
+
+# Embedding backend. v1 is a pure-local TF-IDF + TruncatedSVD pipeline
+# (fast, dependency-light, deterministic). The Embedder interface leaves
+# room for a "sentence_transformers" backend later without touching callers.
+EMBEDDING_MODEL_TYPE: str = _os.environ.get("EMBEDDING_MODEL_TYPE", "tfidf_svd")
+
+# Latent dimensionality of the TruncatedSVD projection over the TF-IDF space.
+EMBEDDING_SVD_DIM: int = int(_os.environ.get("EMBEDDING_SVD_DIM", "64"))
+
+# On-disk SQLite path for the local song feature store. Relative paths are
+# resolved against the project root so the demo can be launched from anywhere.
+_FEATURE_STORE_PATH_RAW: str = _os.environ.get(
+    "FEATURE_STORE_PATH", "data/song_feature_store.sqlite"
+)
+FEATURE_STORE_PATH: Path = (
+    Path(_FEATURE_STORE_PATH_RAW)
+    if Path(_FEATURE_STORE_PATH_RAW).is_absolute()
+    else ROOT / _FEATURE_STORE_PATH_RAW
+)

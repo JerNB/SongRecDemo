@@ -27,6 +27,9 @@ dist/
 # Generated project artifacts
 artifacts/
 
+# Local song feature store (P2 embedding recall catalogue, runtime-built)
+data/
+
 # Local datasets
 KGRec-dataset/
 
