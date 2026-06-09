@@ -38,6 +38,7 @@ class Explainer:
                     reasons=reasons,
                     matched_tags=matched,
                     sources=list(cand.sources),
+                    source_types=sorted({h.source_type for h in cand.source_hits if h.source_type}),
                     pick_type=pick_type,
                 )
             )

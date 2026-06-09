@@ -118,6 +118,9 @@ class _ServiceHolder:
         # lets the smoke test run fully offline.
         self._injected_client: Any = None
         self._injected_cache: Any = None
+        # Test injection: an in-memory SongFeatureStore so the smoke test
+        # never touches the on-disk catalogue.
+        self._injected_feature_store: Any = None
 
     # ------------------------------------------------------------------
     # Lifecycle
@@ -129,12 +132,19 @@ class _ServiceHolder:
         client: Any,
         cache: Any,
         netease_alive: bool = True,
+        feature_store: Any = None,
     ) -> None:
-        """Smoke-test hook -- swap in a fake NetEase client + cache."""
+        """Smoke-test hook -- swap in a fake NetEase client + cache.
+
+        ``feature_store`` lets the hermetic smoke test inject an in-memory
+        :class:`SongFeatureStore` so the embedding recall channel can be
+        exercised without writing to the on-disk catalogue.
+        """
         with self._lock:
             self._injected_client = client
             self._injected_cache = cache
             self._netease_alive = bool(netease_alive)
+            self._injected_feature_store = feature_store
 
     def init(
         self,
@@ -179,6 +189,7 @@ class _ServiceHolder:
             self._recommender = NeteaseRecommender(
                 client=self._client,
                 cache=self._cache,
+                feature_store=self._injected_feature_store,
             )
 
             # ----- Research layer (optional) ------------------------

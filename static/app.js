@@ -2,7 +2,13 @@
 (function () {
   "use strict";
 
-  const state = { selectedSongs: new Map(), lastSearchItems: [], isSearching: false };
+  const state = {
+    selectedSongs: new Map(),
+    lastSearchItems: [],
+    isSearching: false,
+    loadingTimer: 0,
+    loadingStageIndex: 0,
+  };
   const $ = (id) => document.getElementById(id);
   const els = {
     form: $("rec-form"), introSubmit: $("intro-submit"), submit: $("submit-btn"),
@@ -10,7 +16,7 @@
     modelInfo: $("model-info"), searchQ: $("search-q"), searchBtn: $("search-btn"),
     searchStatus: $("search-status"), searchResults: $("search-results"),
     picksList: $("picks-list"), picksCount: $("picks-count"), picksEmpty: $("picks-empty"),
-    tasteChips: $("taste-chips"), loading: $("loading"), empty: $("empty-state"),
+    tasteChips: $("taste-chips"), loading: $("loading"), loadingStage: $("loading-stage"), empty: $("empty-state"),
     cards: $("cards"), resultsMeta: $("results-meta"), resultsSubtitle: $("results-subtitle"),
     technicalDetails: $("technical-details"), technicalBody: $("technical-body"),
   };
@@ -25,6 +31,12 @@
     mandopop: { query: "Jay Chou", artists: "Jay Chou, Eason Chan", genres: "Mandopop", moods: "nostalgic, romantic", tags: "", preset: "balanced" },
     broad: { query: "electronic indie pop", artists: "", genres: "electronic, indie pop", moods: "energetic, dreamy", tags: "synth, dance", preset: "discovery" },
   };
+  const loadingStages = [
+    "Reading taste anchors...",
+    "Finding close matches...",
+    "Adding discovery picks...",
+    "Ranking playlist...",
+  ];
   const scoreLabels = {
     final: "Overall fit", final_score: "Overall fit", content: "Taste match", artist_match: "Artist affinity",
     tag_match: "Genre and mood match", title_match: "Liked-song similarity",
@@ -101,18 +113,22 @@
       ...parseCsv($("moods").value).map((v) => ["Mood", v]),
       ...parseCsv($("tags").value).map((v) => ["Tag", v]),
     ];
-    els.tasteChips.innerHTML = chips.map(([kind, value]) =>
-      `<span class="taste-chip"><b>${escapeHtml(kind)}</b>${escapeHtml(value)}</span>`).join("");
+    els.tasteChips.innerHTML = chips.map(([kind, value], index) =>
+      `<span class="taste-chip" style="animation-delay:${Math.min(index * 24, 160)}ms"><b>${escapeHtml(kind)}</b>${escapeHtml(value)}</span>`).join("");
   }
 
   function renderSelectedSongs() {
     const songs = Array.from(state.selectedSongs.values());
     els.picksCount.textContent = `${songs.length} selected`;
+    els.picksCount.classList.remove("bump");
+    void els.picksCount.offsetWidth;
+    els.picksCount.classList.add("bump");
     els.picksEmpty.hidden = songs.length > 0;
     els.picksList.innerHTML = "";
-    for (const song of songs) {
+    for (const [index, song] of songs.entries()) {
       const node = document.createElement("div");
       node.className = "selected-song";
+      node.style.animationDelay = `${Math.min(index * 35, 180)}ms`;
       node.innerHTML = `
         ${coverMarkup(song.cover_url, "mini-cover")}
         <div class="song-copy">
@@ -148,10 +164,11 @@
       return;
     }
     const lookup = new Map(state.lastSearchItems.map((item) => [songId(item), item]));
-    for (const item of state.lastSearchItems) {
+    for (const [index, item] of state.lastSearchItems.entries()) {
       const duration = formatDuration(item.duration_ms);
       const card = document.createElement("article");
       card.className = "search-card";
+      card.style.animationDelay = `${Math.min(index * 28, 180)}ms`;
       card.innerHTML = `
         ${coverMarkup(item.cover_url, "search-cover")}
         <div class="song-copy">
@@ -258,9 +275,11 @@
     const numeric = Number(value) || 0;
     return `<div class="score-row"><span>${escapeHtml(label)}</span><div class="score-bar"><span style="width: ${Math.max(0, Math.min(1, numeric)) * 100}%"></span></div><b>${numeric.toFixed(2)}</b></div>`;
   }
-  function renderRecommendationCard(item) {
+  function renderRecommendationCard(item, index) {
     const card = document.createElement("li");
-    card.className = `rec-card pick-${escapeHtml(item.pick_type || "balanced")}`;
+    const featured = Number(item.rank || index + 1) === 1;
+    card.className = `rec-card pick-${escapeHtml(item.pick_type || "balanced")}${featured ? " featured" : ""}`;
+    card.style.animationDelay = `${Math.min(index * 55, 420)}ms`;
     const chips = reasonChips(item), neteaseUrl = httpsify(item.netease_url);
     const rows = readableScoreRows(item.score_breakdown);
     card.innerHTML = `
@@ -273,7 +292,7 @@
         </div>
         ${neteaseUrl ? `<a class="netease-link" href="${escapeHtml(neteaseUrl)}" target="_blank" rel="noopener noreferrer">Open on NetEase</a>` : ""}
         <p class="explanation">${escapeHtml(item.explanation || "Recommended because it matches several parts of your taste profile.")}</p>
-        <div class="reason-chips">${chips.map((chip) => `<span>${escapeHtml(chip)}</span>`).join("")}</div>
+        <div class="reason-chips">${chips.map((chip, chipIndex) => `<span style="animation-delay:${Math.min(120 + chipIndex * 35, 320)}ms">${escapeHtml(chip)}</span>`).join("")}</div>
         <details class="why"><summary>Why this song?</summary><div class="score-list">${rows.map(([label, value]) => scoreRow(label, value)).join("")}</div></details>
       </div>`;
     return card;
@@ -305,7 +324,7 @@
     els.resultsMeta.hidden = false;
     els.resultsMeta.textContent = `${items.length} songs - ${summary.total_unique || 0} candidates`;
     const fragment = document.createDocumentFragment();
-    items.forEach((item) => fragment.appendChild(renderRecommendationCard(item)));
+    items.forEach((item, index) => fragment.appendChild(renderRecommendationCard(item, index)));
     els.cards.appendChild(fragment);
     renderTechnicalDetails(data);
     if (data.fallback_used === "no_input") showError("Could not generate recommendations. Try adding at least one song, artist, genre, mood, or tag.");
@@ -313,12 +332,30 @@
   function setRecommendLoading(on) {
     els.submit.disabled = on; els.introSubmit.disabled = on;
     els.submit.textContent = on ? "Building your recommendation list..." : "Build recommendation list";
+    els.introSubmit.textContent = on ? "Building playlist..." : "Start with a song";
     els.loading.hidden = !on;
+    if (on) {
+      state.loadingStageIndex = 0;
+      els.loadingStage.textContent = loadingStages[0];
+      window.clearInterval(state.loadingTimer);
+      state.loadingTimer = window.setInterval(() => {
+        state.loadingStageIndex = (state.loadingStageIndex + 1) % loadingStages.length;
+        els.loadingStage.textContent = loadingStages[state.loadingStageIndex];
+      }, 850);
+    } else {
+      window.clearInterval(state.loadingTimer);
+      state.loadingTimer = 0;
+    }
     if (on) { clearError(); els.empty.hidden = true; }
   }
   async function recommend() {
     const payload = buildPayload();
-    if (!hasInput(payload)) { showError("Could not generate recommendations. Try adding at least one song, artist, genre, mood, or tag."); return; }
+    if (!hasInput(payload)) {
+      showError("Add at least one song, artist, genre, mood, or tag before building the playlist.");
+      els.searchQ.scrollIntoView({ behavior: "smooth", block: "center" });
+      els.searchQ.focus();
+      return;
+    }
     setRecommendLoading(true);
     try {
       const response = await fetch("/api/recommend", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) });
@@ -356,8 +393,18 @@
     els.searchQ.value = example.query; searchSongs(example.query); els.searchQ.focus();
   }
 
+  function startFromIntro() {
+    if (hasInput(buildPayload())) {
+      recommend();
+      return;
+    }
+    clearError();
+    els.searchQ.scrollIntoView({ behavior: "smooth", block: "center" });
+    els.searchQ.focus();
+  }
+
   els.form.addEventListener("submit", (event) => { event.preventDefault(); recommend(); });
-  els.introSubmit.addEventListener("click", () => recommend());
+  els.introSubmit.addEventListener("click", startFromIntro);
   els.searchBtn.addEventListener("click", () => searchSongs(els.searchQ.value));
   els.searchQ.addEventListener("input", debouncedSearch);
   els.searchQ.addEventListener("keydown", (event) => { if (event.key === "Enter") { event.preventDefault(); searchSongs(els.searchQ.value); } });

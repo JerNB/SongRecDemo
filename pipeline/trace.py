@@ -28,6 +28,13 @@ class RecommendationTrace:
     latency_ms: float = 0.0
     cache_info: dict[str, Any] = field(default_factory=dict)
     stage_latencies_ms: dict[str, float] = field(default_factory=dict)
+    # --- P2: embedding recall channel observability (all additive). -------
+    num_feature_store_songs: int = 0
+    embedding_recall_enabled: bool = False
+    num_embedding_candidates: int = 0
+    embedding_index_ready: bool = False
+    embedding_latency_ms: float = 0.0
+    feature_store_upserts: int = 0
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -43,6 +50,12 @@ class RecommendationTrace:
             "latency_ms":              round(float(self.latency_ms), 2),
             "cache_info":              dict(self.cache_info),
             "stage_latencies_ms":      {k: round(float(v), 2) for k, v in self.stage_latencies_ms.items()},
+            "num_feature_store_songs": int(self.num_feature_store_songs),
+            "embedding_recall_enabled": bool(self.embedding_recall_enabled),
+            "num_embedding_candidates": int(self.num_embedding_candidates),
+            "embedding_index_ready":   bool(self.embedding_index_ready),
+            "embedding_latency_ms":    round(float(self.embedding_latency_ms), 2),
+            "feature_store_upserts":   int(self.feature_store_upserts),
         }
 
     def log_line(self) -> str:
@@ -55,5 +68,10 @@ class RecommendationTrace:
             f"content_weight={self.content_weight:.2f} "
             f"novelty={self.novelty:.2f} diversity={self.diversity:.2f} "
             f"latency_ms={self.latency_ms:.1f} "
+            f"embed_enabled={self.embedding_recall_enabled} "
+            f"embed_ready={self.embedding_index_ready} "
+            f"store_songs={self.num_feature_store_songs} "
+            f"embed_cands={self.num_embedding_candidates} "
+            f"upserts={self.feature_store_upserts} "
             f"cache={self.cache_info}"
         )

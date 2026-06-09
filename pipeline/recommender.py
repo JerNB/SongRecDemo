@@ -16,8 +16,13 @@ import time
 import uuid
 from typing import Any, Optional
 
+import config
+
+from .embedding import Embedder
+from .embedding_retrieval import EmbeddingRetriever
 from .enrichment import FeatureEnricher
 from .explain import Explainer
+from .feature_store import SongFeatureStore
 from .filtering import CandidateFilter
 from .profile import ProfileBuilder
 from .ranking import Ranker
@@ -31,6 +36,7 @@ from .types import (
     RealSongRequest,
     RealSongResponse,
     UserProfile,
+    merge_candidates_into,
     _NeteaseClient,
     _QueryCache,
 )
@@ -65,6 +71,8 @@ class NeteaseRecommender:
         max_tag_queries: int = 4,
         max_title_queries: int = 3,
         per_artist_cap: int = 2,
+        feature_store: Optional[SongFeatureStore] = None,
+        embedding_recall_enabled: Optional[bool] = None,
     ) -> None:
         self._client = client
         self._cache = cache
@@ -102,6 +110,45 @@ class NeteaseRecommender:
         self._reranker = Reranker()
         self._explainer = Explainer()
 
+        # --- P2: local feature store + embedding recall channel. -------
+        # The store is the durable local catalogue; the embedding retriever
+        # is an additive second recall channel that never replaces NetEase
+        # search and never touches the P0 ranking formula. Construction is
+        # defensive: any failure leaves the channel disabled instead of
+        # breaking the (search-only) recommender.
+        self._embedding_recall_enabled = bool(
+            config.EMBEDDING_RECALL_ENABLED
+            if embedding_recall_enabled is None
+            else embedding_recall_enabled
+        )
+        self._feature_store: Optional[SongFeatureStore]
+        try:
+            self._feature_store = (
+                feature_store if feature_store is not None
+                else SongFeatureStore(config.FEATURE_STORE_PATH)
+            )
+        except Exception as exc:  # noqa: BLE001
+            log.warning("feature_store init failed (%s); embedding recall off.", exc)
+            self._feature_store = None
+            self._embedding_recall_enabled = False
+
+        self._embedding_retriever: Optional[EmbeddingRetriever] = None
+        if self._feature_store is not None and self._embedding_recall_enabled:
+            try:
+                self._embedding_retriever = EmbeddingRetriever(
+                    store=self._feature_store,
+                    embedder=Embedder(
+                        model_type=config.EMBEDDING_MODEL_TYPE,
+                        svd_dim=int(config.EMBEDDING_SVD_DIM),
+                    ),
+                    reliability=float(config.EMBEDDING_RECALL_RELIABILITY),
+                    top_k=int(config.EMBEDDING_RECALL_TOP_K),
+                    min_corpus_size=int(config.EMBEDDING_MIN_CORPUS_SIZE),
+                )
+            except Exception as exc:  # noqa: BLE001
+                log.warning("embedding retriever init failed (%s); channel off.", exc)
+                self._embedding_retriever = None
+
     # ------------------------------------------------------------------
     # Public API
     # ------------------------------------------------------------------
@@ -132,7 +179,8 @@ class NeteaseRecommender:
                 items=[],
                 control=self._control_echo(req),
                 candidate_summary={"artist": 0, "tag": 0, "title": 0,
-                                   "discovery": 0, "total_unique": 0},
+                                   "discovery": 0, "embedding": 0,
+                                   "total_unique": 0},
                 profile=self._profile_echo(profile),
                 model_info=self._model_info(),
                 fallback_used="no_input",
@@ -142,10 +190,20 @@ class NeteaseRecommender:
         stage_latencies: dict[str, float] = {}
 
         # Stage 2: multi-channel candidate retrieval (recall only).
+        #   2a) NetEase /search recall (always).
+        #   2b) embedding recall from the local feature store (optional;
+        #       auto-skipped when the store is empty / too small).
+        # The two channels are merged by song_id so a song found by both
+        # simply gains extra source hits (raising multi_source_agreement
+        # naturally) -- the P0 ranking formula is untouched.
         t = time.perf_counter()
         candidates, retrieval_stats = self._retriever.retrieve(profile, req)
-        num_raw = int(retrieval_stats["after_dedup"])
         stage_latencies["retrieval"] = (time.perf_counter() - t) * 1000.0
+
+        embed_stats = self._embedding_recall(profile, req, candidates)
+        stage_latencies["embedding_recall"] = float(embed_stats.get("embedding_latency_ms", 0.0))
+
+        num_raw = int(len(candidates))
 
         # Stage 3a: pre-enrichment filtering (metadata-only rules).
         t = time.perf_counter()
@@ -163,6 +221,14 @@ class NeteaseRecommender:
         enrich_n = self._enricher.enrichment_budget(req)
         enriched_count = self._enricher.enrich([cand for _score, cand, _bd in scored[:enrich_n]])
         stage_latencies["enrichment"] = (time.perf_counter() - t) * 1000.0
+
+        # Stage 4b: persist everything we have just seen into the local
+        # feature store so the catalogue (and the embedding index) grows on
+        # every run. Done before post-filtering so even soon-to-be-dropped
+        # songs are remembered for future recall.
+        t = time.perf_counter()
+        feature_store_upserts = self._upsert_feature_store(candidates)
+        stage_latencies["feature_store_upsert"] = (time.perf_counter() - t) * 1000.0
 
         # Stage 3b: post-enrichment filtering (signal-dependent rules).
         t = time.perf_counter()
@@ -191,8 +257,9 @@ class NeteaseRecommender:
             "tag":                        int(retrieval_stats["tag"]),
             "title":                      int(retrieval_stats["title"]),
             "discovery":                  int(retrieval_stats["discovery"]),
+            "embedding":                  int(embed_stats.get("num_embedding_candidates", 0)),
             "retrieved_total":            int(retrieval_stats["retrieved_total"]),
-            "after_dedup":                int(retrieval_stats["after_dedup"]),
+            "after_dedup":                int(num_raw),
             "filtered_liked":             int(pre_stats["filtered_liked"]),
             "filtered_same_title":        int(pre_stats["filtered_same_title"]),
             "filtered_tag_title":         int(pre_stats["filtered_tag_title"]),
@@ -214,6 +281,8 @@ class NeteaseRecommender:
             num_final=int(len(cards)),
             latency_ms=(time.perf_counter() - t_start) * 1000.0,
             stage_latencies=stage_latencies,
+            embed_stats=embed_stats,
+            feature_store_upserts=feature_store_upserts,
         )
         log.info(trace.log_line())
 
@@ -227,6 +296,50 @@ class NeteaseRecommender:
             fallback_used=None if cards else "no_candidates",
             trace=trace.to_dict(),
         )
+
+    # ------------------------------------------------------------------
+    # P2: embedding recall + feature-store persistence
+    # ------------------------------------------------------------------
+
+    def _embedding_recall(
+        self,
+        profile: UserProfile,
+        req: RealSongRequest,
+        candidates: dict[int, Candidate],
+    ) -> dict[str, Any]:
+        """Run the optional embedding recall channel and merge its hits.
+
+        Returns the embedding stats dict (always populated so the trace can
+        report the channel state). Never raises into the request path.
+        """
+        stats: dict[str, Any] = {
+            "num_feature_store_songs": self._feature_store.count() if self._feature_store else 0,
+            "num_embedding_candidates": 0,
+            "embedding_index_ready": False,
+            "embedding_latency_ms": 0.0,
+        }
+        if not self._embedding_recall_enabled or self._embedding_retriever is None:
+            return stats
+
+        try:
+            exclude = set(profile.liked_track_ids) | set(profile.excluded_track_ids)
+            embed_candidates, stats = self._embedding_retriever.retrieve(
+                profile, req, exclude_ids=exclude,
+            )
+            merge_candidates_into(candidates, embed_candidates)
+        except Exception as exc:  # noqa: BLE001 -- embedding must never break recall
+            log.warning("embedding recall failed (%s); continuing search-only.", exc)
+        return stats
+
+    def _upsert_feature_store(self, candidates: dict[int, Candidate]) -> int:
+        """Persist the current candidate pool into the local feature store."""
+        if self._feature_store is None:
+            return 0
+        try:
+            return self._feature_store.upsert_candidates(candidates.values())
+        except Exception as exc:  # noqa: BLE001
+            log.warning("feature_store upsert failed (%s); skipping.", exc)
+            return 0
 
     # ------------------------------------------------------------------
     # Trace + echo helpers
@@ -244,7 +357,10 @@ class NeteaseRecommender:
         num_final: int,
         latency_ms: float,
         stage_latencies: dict[str, float],
+        embed_stats: Optional[dict[str, Any]] = None,
+        feature_store_upserts: int = 0,
     ) -> RecommendationTrace:
+        embed_stats = embed_stats or {}
         return RecommendationTrace(
             request_id=request_id,
             profile_summary={
@@ -268,6 +384,12 @@ class NeteaseRecommender:
                 "cache_enabled":       self._cache is not None,
             },
             stage_latencies_ms=dict(stage_latencies),
+            num_feature_store_songs=int(embed_stats.get("num_feature_store_songs", 0)),
+            embedding_recall_enabled=bool(self._embedding_recall_enabled),
+            num_embedding_candidates=int(embed_stats.get("num_embedding_candidates", 0)),
+            embedding_index_ready=bool(embed_stats.get("embedding_index_ready", False)),
+            embedding_latency_ms=float(embed_stats.get("embedding_latency_ms", 0.0)),
+            feature_store_upserts=int(feature_store_upserts),
         )
 
     def _control_echo(self, req: RealSongRequest) -> dict[str, Any]:
@@ -306,9 +428,21 @@ class NeteaseRecommender:
             "ranking_weights_version":      "v1",
             "ranking_weights":              _W,
             "pipeline_stages": [
-                "profile", "retrieval", "filtering", "enrichment",
-                "ranking", "reranking", "explanation", "trace",
+                "profile", "retrieval", "embedding_recall", "filtering",
+                "enrichment", "feature_store_upsert", "ranking", "reranking",
+                "explanation", "trace",
             ],
+            "embedding_recall": {
+                "enabled":           bool(self._embedding_recall_enabled),
+                "model_type":        config.EMBEDDING_MODEL_TYPE,
+                "reliability":       float(config.EMBEDDING_RECALL_RELIABILITY),
+                "min_corpus_size":   int(config.EMBEDDING_MIN_CORPUS_SIZE),
+                "feature_store_songs": self._feature_store.count() if self._feature_store else 0,
+                "note": (
+                    "Additive local recall channel; does not replace NetEase "
+                    "search and does not change the P0 ranking formula."
+                ),
+            },
             "content_weight_meaning": (
                 "Higher content_weight leans on user text / liked songs / "
                 "artists / tags / genres; lower content_weight leans on "

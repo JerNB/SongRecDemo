@@ -88,6 +88,11 @@ class RealSongCard:
     matched_tags: list[str]
     sources: list[str]
     pick_type: str           # "safe" | "exploratory" | "diverse" | "balanced"
+    # Distinct retrieval channel kinds that surfaced this song, e.g.
+    # ["artist", "genre", "embedding"]. Additive, P2 field -- lets the
+    # frontend show how a recommendation was found without breaking the
+    # existing `sources` (labelled per-query names) contract.
+    source_types: list[str] = field(default_factory=list)
 
     def to_dict(self) -> dict[str, Any]:
         d = self.track.to_card_dict()
@@ -99,6 +104,7 @@ class RealSongCard:
             "reasons":          list(self.reasons),
             "matched_tags":     list(self.matched_tags),
             "sources":          list(self.sources),
+            "source_types":     list(self.source_types),
             "pick_type":        self.pick_type,
         })
         return d
@@ -286,3 +292,38 @@ def _merge_track(a: TrackRef, b: TrackRef) -> TrackRef:
         album=a.album or b.album,
         cover_url=a.cover_url or b.cover_url,
     )
+
+
+def merge_candidates_into(
+    base: dict[int, Candidate],
+    extra: dict[int, Candidate],
+) -> int:
+    """Merge ``extra`` candidates into ``base`` keyed by song_id.
+
+    When a song already exists in ``base`` (e.g. it was recalled by both the
+    NetEase search channel and the embedding channel), the two candidates'
+    ``source_hits`` / ``sources`` / ``positions`` are combined onto the
+    existing object and the richer :class:`TrackRef` is kept. Combining the
+    source hits is what naturally raises ``multi_source_agreement`` for songs
+    found through several independent channels -- without any change to the P0
+    scoring formula.
+
+    Returns the number of song_ids that were newly added to ``base``.
+    """
+    added = 0
+    for sid, cand in extra.items():
+        existing = base.get(sid)
+        if existing is None:
+            base[sid] = cand
+            added += 1
+            continue
+        existing.track = _merge_track(existing.track, cand.track)
+        if not existing.artist_ids and cand.artist_ids:
+            existing.artist_ids = list(cand.artist_ids)
+        for name in cand.sources:
+            if name not in existing.sources:
+                existing.sources.append(name)
+        for name, pos in cand.positions.items():
+            existing.positions.setdefault(name, pos)
+        existing.source_hits.extend(cand.source_hits)
+    return added

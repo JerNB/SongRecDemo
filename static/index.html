@@ -12,7 +12,7 @@
       <span class="brand-mark" aria-hidden="true"></span>
       <div>
         <h1>SongRec</h1>
-        <p>Real song recommendations with clear reasons.</p>
+        <p>Real-song playlist builder</p>
       </div>
     </div>
     <div class="status" id="status" role="status" aria-live="polite">
@@ -24,23 +24,29 @@
   <main class="shell">
     <section class="intro">
       <div>
-        <h2>Build a music profile from songs you actually like.</h2>
+        <p class="eyebrow">Taste anchors in. Ranked playlist out.</p>
+        <h2>Turn a few songs into a recommendation set that feels intentional.</h2>
         <p>
-          Search real songs, add artists and taste tags, choose how safe or exploratory
-          the list should be, then get ranked NetEase song recommendations.
+          Search real tracks, add taste signals, tune safe versus exploratory, then
+          generate a NetEase-backed list with readable reasons.
         </p>
       </div>
-      <button type="button" class="primary intro-action" id="intro-submit">Get recommendations</button>
+      <div class="hero-actions">
+        <button type="button" class="primary intro-action" id="intro-submit">Start with a song</button>
+        <div class="signal-strip" aria-hidden="true">
+          <span></span><span></span><span></span><span></span><span></span>
+        </div>
+      </div>
     </section>
 
     <div class="workspace">
       <form id="rec-form" class="input-column" autocomplete="off">
-        <section class="section-card" aria-labelledby="choose-title">
+        <section class="section-card taste-builder" aria-labelledby="choose-title">
           <div class="section-heading">
-            <span class="step">A</span>
+            <span class="step">01</span>
             <div>
-              <h2 id="choose-title">Choose songs you like</h2>
-              <p>Search NetEase and add a few real songs as taste anchors.</p>
+              <h2 id="choose-title">Taste builder</h2>
+              <p>Start with real songs. Add one or two anchors for stronger output.</p>
             </div>
           </div>
 
@@ -62,34 +68,38 @@
 
         <section class="section-card" aria-labelledby="taste-title">
           <div class="section-heading">
-            <span class="step">B</span>
+            <span class="step">02</span>
             <div>
-              <h2 id="taste-title">Describe your taste</h2>
-              <p>Add comma-separated artists, genres, moods, and tags.</p>
+              <h2 id="taste-title">Taste signals</h2>
+              <p>Add artists, genres, moods, and tags when song anchors are not enough.</p>
             </div>
           </div>
 
-          <label class="field-label" for="liked_artists">Favorite artists</label>
-          <input id="liked_artists" type="text" placeholder="Radiohead, Adele, Jay Chou" />
+          <details class="advanced-fields" open>
+            <summary>More taste details</summary>
 
-          <label class="field-label" for="genres">Genres</label>
-          <input id="genres" type="text" placeholder="indie rock, R&B, Mandopop, electronic" />
+            <label class="field-label" for="liked_artists">Favorite artists</label>
+            <input id="liked_artists" type="text" placeholder="Radiohead, Adele, Jay Chou" />
 
-          <label class="field-label" for="moods">Moods</label>
-          <input id="moods" type="text" placeholder="sad, energetic, chill, romantic" />
+            <label class="field-label" for="genres">Genres</label>
+            <input id="genres" type="text" placeholder="indie rock, R&B, Mandopop, electronic" />
 
-          <label class="field-label" for="tags">Tags</label>
-          <input id="tags" type="text" placeholder="acoustic, piano, alternative, dream pop" />
+            <label class="field-label" for="moods">Moods</label>
+            <input id="moods" type="text" placeholder="sad, energetic, chill, romantic" />
+
+            <label class="field-label" for="tags">Tags</label>
+            <input id="tags" type="text" placeholder="acoustic, piano, alternative, dream pop" />
+          </details>
 
           <div id="taste-chips" class="taste-chips" aria-live="polite"></div>
         </section>
 
         <section class="section-card" aria-labelledby="style-title">
           <div class="section-heading">
-            <span class="step">C</span>
+            <span class="step">03</span>
             <div>
-              <h2 id="style-title">Tune the recommendation style</h2>
-              <p>Use presets or adjust the list yourself.</p>
+              <h2 id="style-title">Output control</h2>
+              <p>Pick the listening mode, then fine-tune the playlist if needed.</p>
             </div>
           </div>
 
@@ -99,6 +109,18 @@
             <button type="button" class="preset" data-preset="discovery">Discovery</button>
           </div>
 
+          <div class="slider-block discovery-control">
+            <div class="slider-top">
+              <label for="novelty">Discovery level</label>
+              <output id="novelty_v" for="novelty">0.40</output>
+            </div>
+            <input id="novelty" type="range" min="0" max="1" step="0.05" value="0.40" />
+            <div class="range-labels"><span>Safer</span><span>More hidden gems</span></div>
+          </div>
+
+          <details class="advanced-fields tune-details">
+            <summary>Advanced tuning</summary>
+
           <div class="slider-block">
             <div class="slider-top">
               <label for="content_weight">Stay close to my taste</label>
@@ -106,15 +128,6 @@
             </div>
             <input id="content_weight" type="range" min="0" max="1" step="0.05" value="0.60" />
             <div class="range-labels"><span>Broader</span><span>Closer</span></div>
-          </div>
-
-          <div class="slider-block">
-            <div class="slider-top">
-              <label for="novelty">Discovery level</label>
-              <output id="novelty_v" for="novelty">0.40</output>
-            </div>
-            <input id="novelty" type="range" min="0" max="1" step="0.05" value="0.40" />
-            <div class="range-labels"><span>Safer</span><span>More hidden gems</span></div>
           </div>
 
           <div class="slider-block">
@@ -131,6 +144,7 @@
             <input id="k" type="number" min="1" max="30" step="1" value="10" />
             <span id="k_v">10 songs</span>
           </div>
+          </details>
 
           <button type="submit" id="submit-btn" class="primary submit-btn">Build recommendation list</button>
           <div class="error" id="error" hidden></div>
@@ -138,10 +152,10 @@
 
         <section class="section-card examples" aria-labelledby="examples-title">
           <div class="section-heading compact">
-            <span class="step">Try</span>
+            <span class="step">Preset</span>
             <div>
-              <h2 id="examples-title">Try example</h2>
-              <p>Fill the form with a presentation-friendly profile.</p>
+              <h2 id="examples-title">Profile presets</h2>
+              <p>Load a presentation-friendly taste profile.</p>
             </div>
           </div>
           <div class="example-grid">
@@ -166,9 +180,9 @@
         <div class="results-panel">
           <div class="results-heading">
             <div class="section-heading compact">
-              <span class="step">D</span>
+              <span class="step">04</span>
               <div>
-                <h2 id="results-title">Recommended songs</h2>
+                <h2 id="results-title">Generated playlist</h2>
                 <p id="results-subtitle">Your ranked list will appear here.</p>
               </div>
             </div>
@@ -176,12 +190,17 @@
           </div>
 
           <div id="loading" class="loading" hidden>
-            <div class="spinner"></div>
-            <p>Building your recommendation list...</p>
+            <div class="loading-eq" aria-hidden="true">
+              <span></span><span></span><span></span><span></span>
+            </div>
+            <p id="loading-stage">Reading taste anchors...</p>
           </div>
 
           <div id="empty-state" class="empty-state">
-            <strong>Search for a few songs or describe your taste to start.</strong>
+            <div class="playlist-ghost" aria-hidden="true">
+              <span></span><span></span><span></span>
+            </div>
+            <strong>Your playlist will build here.</strong>
             <p>Recommendations will show covers, artists, albums, explanations, and a short reason trail.</p>
           </div>
 
@@ -193,15 +212,15 @@
           </details>
         </div>
 
-        <aside class="layer-note">
-          <strong>Research layer vs. product layer</strong>
+        <details class="layer-note">
+          <summary>Research layer vs. product layer</summary>
           <p>
             This demo has two layers. The KGRec research layer evaluates popularity,
             ALS collaborative filtering, and content-based recommendation on an academic
             dataset. The Real Song Mode uses NetEase search plus hybrid ranking to turn
             that recommendation logic into a real-song user experience.
           </p>
-        </aside>
+        </details>
       </section>
     </div>
   </main>

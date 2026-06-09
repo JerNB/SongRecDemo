@@ -47,8 +47,24 @@ for p in (str(_ROOT), str(_HERE)):
     if p not in sys.path:
         sys.path.insert(0, p)
 
+import config                                       # noqa: E402
 from app import create_app, HOLDER                 # noqa: E402
-from netease_pipeline import FakeNeteaseClient, _norm_title     # noqa: E402
+from netease_pipeline import (                      # noqa: E402
+    Candidate,
+    CandidateEnrichment,
+    Embedder,
+    EmbeddingRetriever,
+    FakeNeteaseClient,
+    NeteaseRecommender,
+    ProfileBuilder,
+    RealSongRequest,
+    SongFeatureStore,
+    SourceHit,
+    TrackRef,
+    _norm_title,
+    merge_candidates_into,
+)
+from SongRecDemo.pipeline.scoring import multi_source_agreement   # noqa: E402
 
 
 # ---------------------------------------------------------------------------
@@ -332,7 +348,17 @@ def make_client():
         alive=True,
     )
     cache = _MemoryQueryCache()
-    HOLDER.inject_for_tests(client=fake, cache=cache, netease_alive=True)
+    # The shared Flask app under test keeps the P0/P1 behaviour the original
+    # 16 smoke tests assert against. We inject an in-memory feature store so
+    # nothing touches the on-disk catalogue, and force the embedding recall
+    # channel OFF here so the search-only funnel stays deterministic. The P2
+    # embedding behaviour is exercised by dedicated component-level tests
+    # below (which construct their own recommender with recall enabled).
+    config.EMBEDDING_RECALL_ENABLED = False
+    store = SongFeatureStore(":memory:")
+    HOLDER.inject_for_tests(
+        client=fake, cache=cache, netease_alive=True, feature_store=store,
+    )
     app = create_app(eager=True, load_kgrec=False)
     app.testing = True
     return app.test_client(), fake
@@ -719,6 +745,314 @@ def test_kgrec_debug_disabled(client) -> None:
 
 
 # ---------------------------------------------------------------------------
+# P2: feature store + embedding recall tests (component-level, hermetic)
+# ---------------------------------------------------------------------------
+
+def _store_candidate(
+    sid: int,
+    title: str,
+    artist: str,
+    album: str,
+    query: str,
+    *,
+    source_type: str = "genre",
+    enrichment: CandidateEnrichment | None = None,
+) -> Candidate:
+    """Build a standard Candidate the way retrieval would, for store tests."""
+    track = TrackRef(
+        netease_song_id=sid, title=title, artist=artist,
+        artists=[artist] if artist else [], album=album,
+        cover_url=f"https://example/{sid}.jpg",
+    )
+    name = f"{source_type}:{query}"
+    cand = Candidate(track=track)
+    cand.sources.append(name)
+    cand.positions[name] = 0
+    cand.source_hits.append(SourceHit(
+        source_name=name, source_type=source_type, query=query,
+        reliability=0.75, position=0,
+    ))
+    cand.enrichment = enrichment
+    return cand
+
+
+def _populate_indie_store(store: SongFeatureStore) -> None:
+    """Fill a store with > EMBEDDING_MIN_CORPUS_SIZE songs across two
+    clearly-separated semantic clusters so recall is testable."""
+    cands: list[Candidate] = []
+    for i in range(14):
+        cands.append(_store_candidate(
+            900000 + i,
+            f"Quiet Acoustic Number {i}",
+            f"Folk Artist {i}",
+            "Mellow Indie Folk Sessions",
+            "indie folk mellow acoustic guitar",
+        ))
+    for i in range(14):
+        cands.append(_store_candidate(
+            910000 + i,
+            f"Hard Techno Banger {i}",
+            f"DJ Voltage {i}",
+            "Warehouse Electronic Rave",
+            "techno electronic dance bass synth",
+        ))
+    store.upsert_candidates(cands)
+
+
+def _indie_profile_and_req() -> tuple[Any, RealSongRequest]:
+    req = RealSongRequest(
+        genres=["indie folk"], moods=["mellow"], tags=["acoustic guitar"], k=8,
+    )
+    profile = ProfileBuilder().build(req)
+    return profile, req
+
+
+def test_feature_store_upsert_and_read() -> None:
+    store = SongFeatureStore(":memory:")
+    n = store.upsert_candidates([
+        _store_candidate(123, "Song A", "Artist A", "Album A", "indie folk"),
+    ])
+    _expect(n == 1, f"expected 1 upsert, got {n}")
+    _expect(store.count() == 1, f"expected 1 song in store, got {store.count()}")
+    rec = store.get_song(123)
+    _expect(rec is not None, "get_song returned None for an upserted song")
+    _expect(rec.song_id == 123, f"wrong song_id: {rec.song_id}")
+    _expect(rec.title == "Song A", f"wrong title: {rec.title!r}")
+    _expect("Artist A" in rec.artist_names, f"artist_names not stored: {rec.artist_names!r}")
+    _expect(bool(rec.text_for_embedding.strip()),
+            "text_for_embedding should not be empty")
+    _expect("indie" in rec.text_for_embedding.lower(),
+            f"retrieval query not folded into text_for_embedding: {rec.text_for_embedding!r}")
+    _expect(rec.source_seen_count == 1,
+            f"source_seen_count should be 1 on first sight: {rec.source_seen_count}")
+
+
+def test_feature_store_dedup() -> None:
+    store = SongFeatureStore(":memory:")
+    cand = _store_candidate(555, "Dedup Song", "Artist", "Album", "indie")
+    store.upsert_candidates([cand])
+    store.upsert_candidates([cand])
+    store.upsert_candidates([cand])
+    _expect(store.count() == 1,
+            f"re-upserting same song_id created duplicate rows: count={store.count()}")
+    rec = store.get_song(555)
+    _expect(rec is not None, "deduped song vanished")
+    _expect(rec.source_seen_count == 3,
+            f"source_seen_count should be 3 after 3 upserts: {rec.source_seen_count}")
+    _expect(rec.first_seen_at <= rec.last_seen_at,
+            f"last_seen_at should be >= first_seen_at: {rec.first_seen_at} > {rec.last_seen_at}")
+
+
+def test_feature_store_does_not_persist_embedding_query() -> None:
+    """The user's live profile text (embedding source) must never be folded
+    into a song's stable content text."""
+    store = SongFeatureStore(":memory:")
+    cand = _store_candidate(
+        999, "Some Song", "Some Artist", "Some Album",
+        "my very private user profile query",
+        source_type="embedding",
+    )
+    store.upsert_candidates([cand])
+    rec = store.get_song(999)
+    _expect(rec is not None, "song not stored")
+    _expect("private" not in rec.text_for_embedding.lower(),
+            f"embedding query leaked into song text: {rec.text_for_embedding!r}")
+    _expect(rec.query_texts == [],
+            f"embedding query should not be persisted as a query_text: {rec.query_texts}")
+
+
+def test_embedding_skips_small_corpus() -> None:
+    store = SongFeatureStore(":memory:")
+    store.upsert_candidates([
+        _store_candidate(800000 + i, f"Tiny {i}", f"Artist {i}", "Album", "indie folk")
+        for i in range(5)
+    ])
+    retr = EmbeddingRetriever(store, Embedder(svd_dim=32), min_corpus_size=20)
+    profile, req = _indie_profile_and_req()
+    cands, stats = retr.retrieve(profile, req)
+    _expect(cands == {}, f"embedding recall should be empty on small corpus: {cands}")
+    _expect(stats["embedding_index_ready"] is False,
+            f"index should not be ready on small corpus: {stats}")
+    _expect(stats["num_embedding_candidates"] == 0,
+            f"no embedding candidates expected: {stats}")
+    _expect(int(stats["num_feature_store_songs"]) == 5,
+            f"store song count wrong: {stats}")
+
+
+def test_embedding_recall_returns_standard_candidates() -> None:
+    store = SongFeatureStore(":memory:")
+    _populate_indie_store(store)
+    retr = EmbeddingRetriever(store, Embedder(svd_dim=32), top_k=12, min_corpus_size=20)
+    profile, req = _indie_profile_and_req()
+    cands, stats = retr.retrieve(profile, req)
+    _expect(stats["embedding_index_ready"] is True,
+            f"index should be ready on a full corpus: {stats}")
+    _expect(len(cands) > 0, f"embedding recall returned nothing: {stats}")
+    _expect(stats["num_embedding_candidates"] == len(cands),
+            f"stats disagree with returned candidates: {stats} vs {len(cands)}")
+    for sid, c in cands.items():
+        _expect(isinstance(c, Candidate), f"not a Candidate: {c!r}")
+        _expect(int(c.track.netease_song_id) == int(sid),
+                f"candidate key/track id mismatch: {sid} vs {c.track.netease_song_id}")
+        _expect(bool(c.track.title), f"embedding candidate missing title: {c.track}")
+    # The indie-themed profile should pull back at least one indie cluster song.
+    indie_hits = [sid for sid in cands if 900000 <= sid < 910000]
+    _expect(len(indie_hits) >= 1,
+            f"indie profile recalled no indie songs: {sorted(cands)}")
+
+
+def test_embedding_candidates_have_embedding_sourcehit() -> None:
+    store = SongFeatureStore(":memory:")
+    _populate_indie_store(store)
+    retr = EmbeddingRetriever(store, Embedder(svd_dim=32), top_k=12, min_corpus_size=20)
+    profile, req = _indie_profile_and_req()
+    cands, _stats = retr.retrieve(profile, req)
+    _expect(cands, "no embedding candidates to inspect")
+    for c in cands.values():
+        types = {h.source_type for h in c.source_hits}
+        _expect("embedding" in types,
+                f"embedding candidate missing source_type=embedding: {types}")
+        embed_hit = next(h for h in c.source_hits if h.source_type == "embedding")
+        _expect(0.60 <= embed_hit.reliability <= 0.75,
+                f"embedding reliability out of band: {embed_hit.reliability}")
+        _expect(embed_hit.query == profile.user_profile_text,
+                "embedding SourceHit query should be the profile text")
+
+
+def test_merge_combines_source_hits_and_lifts_agreement() -> None:
+    netease = {
+        777: _store_candidate(777, "Shared Song", "Shared Artist",
+                              "Shared Album", "indie folk", source_type="artist"),
+    }
+    before = multi_source_agreement(netease[777])
+
+    emb = Candidate(track=TrackRef(
+        netease_song_id=777, title="Shared Song", artist="Shared Artist",
+        artists=["Shared Artist"], album="Shared Album",
+    ))
+    emb.sources.append("embedding:777")
+    emb.positions["embedding:777"] = 0
+    emb.source_hits.append(SourceHit(
+        source_name="embedding:777", source_type="embedding",
+        query="profile text", reliability=0.68, position=0,
+    ))
+
+    added = merge_candidates_into(netease, {777: emb})
+    _expect(added == 0, "merging an existing song_id should not add a new row")
+    merged = netease[777]
+    types = {h.source_type for h in merged.source_hits}
+    _expect("artist" in types and "embedding" in types,
+            f"merged candidate lost a source type: {types}")
+    after = multi_source_agreement(merged)
+    _expect(after > before,
+            f"multi_source_agreement should rise when both channels hit: {before} -> {after}")
+
+
+def test_embedding_candidate_uses_p0_ranker() -> None:
+    """Embedding candidates flow through the unchanged P0 Ranker and get a
+    full score_breakdown -- the recall channel adds candidates, not a new
+    scoring formula."""
+    from SongRecDemo.pipeline.ranking import Ranker
+
+    store = SongFeatureStore(":memory:")
+    _populate_indie_store(store)
+    retr = EmbeddingRetriever(store, Embedder(svd_dim=32), top_k=12, min_corpus_size=20)
+    profile, req = _indie_profile_and_req()
+    cands, _stats = retr.retrieve(profile, req)
+    _expect(cands, "no embedding candidates to score")
+    scored = Ranker().score_all(cands, profile, req)
+    _expect(len(scored) == len(cands), "ranker dropped candidates")
+    needed = {"final_score", "content_score", "retrieval_score",
+              "multi_source_agreement", "quality_score", "base_relevance"}
+    for final, _cand, bd in scored:
+        _expect(0.0 <= final <= 1.0, f"final_score out of range: {final}")
+        missing = needed - set(bd)
+        _expect(not missing, f"P0 breakdown missing keys for embedding candidate: {sorted(missing)}")
+
+
+def test_embedding_recall_via_recommender_trace() -> None:
+    """End-to-end through the recommender: trace reports the embedding
+    channel, and at least one card carries the embedding source type."""
+    fake = FakeNeteaseClient(
+        responses=CANNED, default=_indie_mix(),
+        enrichments=_enrichments(), alive=True,
+    )
+    store = SongFeatureStore(":memory:")
+    _populate_indie_store(store)
+    rec = NeteaseRecommender(
+        client=fake, cache=_MemoryQueryCache(),
+        feature_store=store, embedding_recall_enabled=True,
+    )
+    resp = rec.recommend(RealSongRequest(
+        genres=["indie folk"], moods=["mellow"], tags=["acoustic guitar"], k=8,
+    ))
+    trace = resp.trace or {}
+    _expect(trace.get("embedding_recall_enabled") is True,
+            f"trace should report embedding enabled: {trace}")
+    _expect(trace.get("embedding_index_ready") is True,
+            f"trace should report index ready: {trace}")
+    _expect(int(trace.get("num_feature_store_songs") or 0) >= 20,
+            f"trace feature_store song count too low: {trace}")
+    _expect(int(trace.get("num_embedding_candidates") or 0) >= 1,
+            f"trace shows no embedding candidates: {trace}")
+    _expect(int(trace.get("feature_store_upserts") or 0) >= 1,
+            f"trace shows no feature store upserts: {trace}")
+    has_embed = any("embedding" in (card.source_types or []) for card in resp.items)
+    _expect(has_embed,
+            "no recommended card carried the embedding source type")
+    # candidate_summary must surface the new embedding bucket.
+    _expect("embedding" in resp.candidate_summary,
+            f"candidate_summary missing embedding bucket: {resp.candidate_summary}")
+
+
+def test_empty_feature_store_still_recommends() -> None:
+    """Cold start: an empty store must not break recall -- the system runs
+    on NetEase search alone, no errors."""
+    fake = FakeNeteaseClient(
+        responses=CANNED, default=_indie_mix(),
+        enrichments=_enrichments(), alive=True,
+    )
+    rec = NeteaseRecommender(
+        client=fake, cache=_MemoryQueryCache(),
+        feature_store=SongFeatureStore(":memory:"),
+        embedding_recall_enabled=True,
+    )
+    resp = rec.recommend(RealSongRequest(liked_artists=["Bon Iver"], k=5))
+    _expect(len(resp.items) > 0, "empty store should still yield search-based recs")
+    trace = resp.trace or {}
+    _expect(trace.get("embedding_index_ready") is False,
+            f"empty store should report index not ready: {trace}")
+    _expect(int(trace.get("num_embedding_candidates") or 0) == 0,
+            f"empty store should recall nothing: {trace}")
+    # The run should have populated the store for next time.
+    _expect(int(trace.get("feature_store_upserts") or 0) >= 1,
+            f"recommend should upsert seen songs into the store: {trace}")
+
+
+def test_content_weight_changes_ranking(client) -> None:
+    """P0 invariant: the content_weight slider still visibly changes the
+    ranking (novelty / diversity pinned to 0 to isolate the blend)."""
+    base = {
+        "liked_artists": ["Bon Iver"],
+        "genres": ["indie folk"],
+        "moods": ["mellow"],
+        "k": 8, "novelty": 0.0, "diversity": 0.0,
+    }
+    r_low = client.post("/api/recommend", json={**base, "content_weight": 0.0})
+    r_high = client.post("/api/recommend", json={**base, "content_weight": 1.0})
+    _expect(r_low.status_code == 200 and r_high.status_code == 200,
+            "recommend failed for content_weight sweep")
+    low = (r_low.get_json() or {})["data"]["items"]
+    high = (r_high.get_json() or {})["data"]["items"]
+    ids_low = [it["netease_song_id"] for it in low]
+    ids_high = [it["netease_song_id"] for it in high]
+    scores_low = [round(it["score_breakdown"]["final_score"], 4) for it in low]
+    scores_high = [round(it["score_breakdown"]["final_score"], 4) for it in high]
+    _expect(ids_low != ids_high or scores_low != scores_high,
+            f"content_weight had no visible effect: {ids_low}=={ids_high}")
+
+
+# ---------------------------------------------------------------------------
 # Main
 # ---------------------------------------------------------------------------
 
@@ -748,6 +1082,18 @@ def main() -> int:
         ("14) /api/recommend (empty body) -> no_input",    lambda: test_recommend_empty_input(client)),
         ("15) /api/recommend (bad body) -> 400/415",       lambda: test_recommend_bad_body(client)),
         ("16) /api/kgrec-recommend disabled -> 503",       lambda: test_kgrec_debug_disabled(client)),
+        # --- P2: song_feature_store + embedding recall channel. ----------
+        ("17) feature_store upsert + read",                lambda: test_feature_store_upsert_and_read()),
+        ("18) feature_store dedup (no duplicate rows)",    lambda: test_feature_store_dedup()),
+        ("19) feature_store never persists profile query", lambda: test_feature_store_does_not_persist_embedding_query()),
+        ("20) embedding skips small corpus (no error)",    lambda: test_embedding_skips_small_corpus()),
+        ("21) embedding recall returns std Candidates",    lambda: test_embedding_recall_returns_standard_candidates()),
+        ("22) embedding candidates carry embedding hit",   lambda: test_embedding_candidates_have_embedding_sourcehit()),
+        ("23) search+embedding merge lifts agreement",     lambda: test_merge_combines_source_hits_and_lifts_agreement()),
+        ("24) embedding candidates use P0 ranker",         lambda: test_embedding_candidate_uses_p0_ranker()),
+        ("25) embedding recall via recommender + trace",   lambda: test_embedding_recall_via_recommender_trace()),
+        ("26) empty feature_store still recommends",       lambda: test_empty_feature_store_still_recommends()),
+        ("27) content_weight still changes ranking",       lambda: test_content_weight_changes_ranking(client)),
     ]
 
     results: list[_Result] = []

@@ -18,8 +18,11 @@ them and assembles the response.
 
 from __future__ import annotations
 
+from .embedding import Embedder, EmbeddingMatch
+from .embedding_retrieval import EmbeddingRetriever
 from .enrichment import FeatureEnricher
 from .explain import Explainer
+from .feature_store import SongFeatureRecord, SongFeatureStore
 from .filtering import CandidateFilter
 from .profile import ProfileBuilder
 from .ranking import Ranker
@@ -37,6 +40,7 @@ from .types import (
     SourceHit,
     TrackRef,
     UserProfile,
+    merge_candidates_into,
 )
 
 __all__ = [
@@ -52,16 +56,23 @@ __all__ = [
     "ProfileBuilder",
     "QueryPlanner",
     "Retriever",
+    "EmbeddingRetriever",
     "CandidateFilter",
     "FeatureEnricher",
     "Ranker",
     "Reranker",
     "Explainer",
     "RecommendationTrace",
+    # P2: feature store + embedding.
+    "SongFeatureStore",
+    "SongFeatureRecord",
+    "Embedder",
+    "EmbeddingMatch",
     # Standard data objects.
     "UserProfile",
     "Candidate",
     "CandidateEnrichment",
     "RetrievalQuery",
     "SourceHit",
+    "merge_candidates_into",
 ]
