@@ -26,13 +26,18 @@
     broad: { query: "electronic indie pop", artists: "", genres: "electronic, indie pop", moods: "energetic, dreamy", tags: "synth, dance", preset: "discovery" },
   };
   const scoreLabels = {
-    final: "Overall fit", content: "Taste match", artist_match: "Artist affinity",
+    final: "Overall fit", final_score: "Overall fit", content: "Taste match", artist_match: "Artist affinity",
     tag_match: "Genre and mood match", title_match: "Liked-song similarity",
-    retrieval: "Retrieval confidence", multi_source: "Multiple signals",
+    retrieval: "Retrieval confidence", multi_source: "Multi-source agreement",
     novelty_term: "Novelty", diversity_boost: "Diversity promotion",
-    metadata_quality_score: "Metadata quality", collaborative_proxy_score: "Collaborative proxy",
+    metadata_quality_score: "Metadata quality",
+    // collaborative_proxy_score is a legacy alias of multi_source_agreement;
+    // it is a retrieval-consensus signal, not collaborative filtering.
+    collaborative_proxy_score: "Multi-source agreement", multi_source_agreement: "Multi-source agreement",
+    content_score: "Taste match (content)", retrieval_score: "Retrieval score", quality_score: "Quality score",
+    personalized_relevance: "Personalized relevance", base_relevance: "Base relevance", rank_score: "List rank score",
     retrieval_confidence_score: "Retrieval confidence", artist_affinity_score: "Artist affinity",
-    novelty_score: "Discovery value", content_score: "Taste match",
+    novelty_score: "Discovery value",
   };
 
   function escapeHtml(value) {
@@ -226,19 +231,26 @@
   function readableScoreRows(scoreBreakdown) {
     const sb = scoreBreakdown || {};
     const ordered = [
-      ["content", "Taste match"], ["collaborative_proxy_score", "Collaborative proxy"],
-      ["multi_source", "Multiple signals"], ["retrieval", "Retrieval confidence"],
-      ["artist_match", "Artist affinity"], ["novelty_term", "Novelty"],
-      ["diversity_boost", "Diversity promotion"], ["metadata_quality_score", "Metadata quality"],
-      ["tag_match", "Genre and mood match"], ["title_match", "Liked-song similarity"],
+      ["content_score", "Taste match (content)"], ["retrieval_score", "Retrieval score"],
+      ["multi_source_agreement", "Multi-source agreement"], ["quality_score", "Quality score"],
+      ["artist_match", "Artist affinity"], ["tag_match", "Genre and mood match"],
+      ["title_match", "Liked-song similarity"], ["novelty_score", "Discovery value"],
+      ["metadata_quality_score", "Metadata quality"],
     ];
+    // Legacy aliases / control echoes are kept in the API payload for
+    // backward compatibility but hidden here so the panel shows each
+    // signal once under its clearer name.
+    const skip = new Set([
+      "final", "final_score", "content", "retrieval", "multi_source",
+      "collaborative_proxy_score", "novelty_term", "content_weight", "mmr_objective",
+    ]);
     const used = new Set(), rows = [];
     for (const [key, label] of ordered) {
       if (typeof sb[key] !== "number") continue;
       used.add(key); rows.push([label, sb[key]]);
     }
     for (const [key, value] of Object.entries(sb)) {
-      if (!used.has(key) && typeof value === "number" && key !== "final") rows.push([scoreLabels[key] || key.replaceAll("_", " "), value]);
+      if (!used.has(key) && !skip.has(key) && typeof value === "number") rows.push([scoreLabels[key] || key.replaceAll("_", " "), value]);
     }
     return rows;
   }
