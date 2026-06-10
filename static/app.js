@@ -51,6 +51,36 @@
     retrieval_confidence_score: "Retrieval confidence", artist_affinity_score: "Artist affinity",
     novelty_score: "Discovery value",
   };
+  const NETEASE_OFFLINE_HINT = "NetEase service is offline. Start the local NetEase API on port 3000, then try again.";
+  const BACKEND_HINT = "Backend is unreachable. Start the Flask demo server, then try again.";
+
+  async function fetchJson(url, options = {}, timeoutMs = 8000) {
+    const controller = new AbortController();
+    const timer = window.setTimeout(() => controller.abort(), timeoutMs);
+    try {
+      const response = await fetch(url, { ...options, signal: controller.signal });
+      let body;
+      try {
+        body = await response.json();
+      } catch (error) {
+        const parseError = new Error("The backend returned invalid JSON. Restart the Flask demo server, then try again.");
+        parseError.code = "invalid_json";
+        parseError.response = response;
+        parseError.cause = error;
+        throw parseError;
+      }
+      return { response, body };
+    } catch (error) {
+      if (error && error.name === "AbortError") {
+        const timeoutError = new Error(`Request timed out after ${Math.round(timeoutMs / 1000)} seconds.`);
+        timeoutError.code = "timeout";
+        throw timeoutError;
+      }
+      throw error;
+    } finally {
+      window.clearTimeout(timer);
+    }
+  }
 
   function escapeHtml(value) {
     return String(value ?? "").replace(/&/g, "&amp;").replace(/</g, "&lt;")
@@ -193,20 +223,25 @@
     state.isSearching = true; els.searchBtn.disabled = true;
     els.searchStatus.textContent = "Searching songs..."; syncSearchButtons();
     try {
-      const response = await fetch(`/api/song-search?q=${encodeURIComponent(q)}&limit=10`);
-      const body = await response.json().catch(() => ({}));
+      const { response, body } = await fetchJson(`/api/song-search?q=${encodeURIComponent(q)}&limit=10`, {}, 7000);
       if (!response.ok || body.ok === false) {
         const offline = response.status === 503 || /netease/i.test(body.error || "");
-        els.searchResults.hidden = true;
+        if (!state.lastSearchItems.length) els.searchResults.hidden = true;
         els.searchStatus.textContent = offline
-          ? "NetEase service is offline. Song search and real-song recommendations may not work. Please start the local NetEase API service."
+          ? NETEASE_OFFLINE_HINT
           : (body.error || `Search failed (${response.status}).`);
         return;
       }
       renderSearchResults(body.items || []);
     } catch (error) {
-      els.searchResults.hidden = true;
-      els.searchStatus.textContent = `Could not search songs: ${error.message || error}`;
+      if (!state.lastSearchItems.length) els.searchResults.hidden = true;
+      if (error.code === "timeout") {
+        els.searchStatus.textContent = `Song search timed out. ${NETEASE_OFFLINE_HINT}`;
+      } else if (error.code === "invalid_json") {
+        els.searchStatus.textContent = error.message;
+      } else {
+        els.searchStatus.textContent = `Could not search songs. ${NETEASE_OFFLINE_HINT}`;
+      }
     } finally {
       state.isSearching = false; els.searchBtn.disabled = false; syncSearchButtons();
     }
@@ -358,30 +393,47 @@
     }
     setRecommendLoading(true);
     try {
-      const response = await fetch("/api/recommend", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) });
-      const body = await response.json().catch(() => ({}));
+      const { response, body } = await fetchJson("/api/recommend", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      }, 12000);
       if (!response.ok || body.ok === false) {
-        showError("Could not generate recommendations. Try adding at least one song, artist, genre, mood, or tag.");
-        if (body.error) els.error.textContent += ` (${body.error})`;
+        const offline = response.status === 503 || /netease/i.test(body.error || "");
+        showError(offline
+          ? `Could not generate recommendations. ${NETEASE_OFFLINE_HINT}`
+          : "Could not generate recommendations. Try adding at least one song, artist, genre, mood, or tag.");
+        if (!offline && body.error) els.error.textContent += ` (${body.error})`;
         return;
       }
       renderResponse(body.data || {});
     } catch (error) {
-      showError(`Could not generate recommendations. ${error.message || error}`);
+      if (error.code === "timeout") {
+        showError(`Recommendation timed out. NetEase may be offline or busy. ${NETEASE_OFFLINE_HINT}`);
+      } else if (error.code === "invalid_json") {
+        showError(error.message);
+      } else {
+        showError(`Could not generate recommendations. ${BACKEND_HINT}`);
+      }
     } finally {
       setRecommendLoading(false);
     }
   }
   async function loadHealth() {
     try {
-      const response = await fetch("/api/health"), data = await response.json();
+      const { response, body: data } = await fetchJson("/api/health", {}, 1800);
+      if (!response.ok || data.ok === false) throw new Error(data.error || `Health failed (${response.status}).`);
       const product = data.product_layer || {}, research = data.research_layer || {};
       const alive = Boolean(product.netease_alive);
       els.statusDot.className = alive ? "dot dot-ok" : "dot dot-warn";
-      els.statusText.textContent = alive ? "NetEase connected" : "NetEase service is offline. Song search and real-song recommendations may not work. Please start the local NetEase API service.";
+      els.statusText.textContent = alive ? "NetEase connected" : NETEASE_OFFLINE_HINT;
       els.modelInfo.textContent = `${product.name || "Real Song Mode"} - KGRec ${research.enabled ? (research.ready ? "ready" : "loading") : "debug off"}`;
-    } catch {
-      els.statusDot.className = "dot dot-bad"; els.statusText.textContent = "Backend unreachable";
+    } catch (error) {
+      els.statusDot.className = "dot dot-bad";
+      els.statusText.textContent = error.code === "timeout"
+        ? "Backend health check timed out. Start the Flask demo server, then try again."
+        : BACKEND_HINT;
+      els.modelInfo.textContent = "Health check unavailable";
     }
   }
   function applyExample(name) {

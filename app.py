@@ -43,6 +43,7 @@ import dataclasses
 import logging
 import sys
 import threading
+import time
 from pathlib import Path
 from typing import Any, Optional
 
@@ -104,15 +105,15 @@ class _ServiceHolder:
         self._kgrec_enabled: bool = False
         self._kgrec_attempted: bool = False
 
-        # Cached freshness for the live ping done by ``/api/health``.
-        # We re-probe NetEase a few seconds after the previous probe
-        # so the status indicator picks up "service came online" or
-        # "service went down" without requiring the user to restart
-        # the Python demo. The ping itself is one ``/search`` call
-        # with limit=1, so it costs a fraction of a second when the
-        # service is up and exits at the configured timeout when down.
+        # Cached freshness for the NetEase status shown by ``/api/health``.
+        # Health returns this cached value immediately and, when stale,
+        # starts a short background re-probe. That keeps the homepage from
+        # waiting on a dead local NetEase API while still letting the
+        # indicator recover after the user starts the service.
         self._last_ping_at: float = 0.0
-        self._ping_ttl_seconds: float = 5.0
+        self._ping_ttl_seconds: float = 10.0
+        self._ping_timeout_seconds: float = 0.8
+        self._ping_inflight: bool = False
 
         # Test injection: when set, ``init`` skips constructing a real
         # NetEase HTTP client and uses the injected one instead. This
@@ -176,21 +177,12 @@ class _ServiceHolder:
                 )
                 self._cache = NeteaseCache(config.NETEASE_CACHE_PATH)
 
-                log.info("Probing NetEase API at %s ...", self._netease_base_url)
-                try:
-                    self._netease_alive = bool(self._client.ping())
-                except Exception as exc:                # noqa: BLE001
-                    log.warning("NetEase ping crashed: %s", exc)
-                    self._netease_alive = False
-                if self._netease_alive:
-                    log.info("NetEase API reachable.")
-                else:
-                    log.warning(
-                        "NetEase API at %s did not answer the ping; "
-                        "search and recommend will rely on whatever is "
-                        "in the on-disk cache.",
-                        self._netease_base_url,
-                    )
+                self._netease_alive = False
+                log.info(
+                    "NetEase API status starts as unknown/offline; "
+                    "health checks will re-probe %s in the background.",
+                    self._netease_base_url,
+                )
 
             self._recommender = NeteaseRecommender(
                 client=self._client,
@@ -261,30 +253,69 @@ class _ServiceHolder:
     def netease_alive(self) -> bool:
         return self._netease_alive
 
-    def refresh_netease_alive(self) -> bool:
-        """Re-probe the NetEase API if the previous result is stale.
+    def mark_netease_alive(self, alive: bool) -> None:
+        """Update the cached NetEase status from a real request outcome."""
+        with self._lock:
+            self._netease_alive = bool(alive)
+            self._last_ping_at = time.time()
 
-        Used by ``/api/health`` so the status indicator reflects the
-        current state -- if the user starts the NetEase service after
-        the Flask app has already booted, the next health request
-        flips the indicator to green without a Python restart.
+    def refresh_netease_alive(self) -> bool:
+        """Return cached status and schedule a non-blocking stale re-probe.
+
+        This method intentionally does not ping synchronously. A dead local
+        NetEase API can take seconds to time out, and ``/api/health`` should
+        never make the first screen sit at "Connecting..." for that long.
         """
         if self._injected_client is not None:
             return self._netease_alive
-        client = self._client
-        if client is None:
-            return False
-
-        import time as _time
-        now = _time.time()
-        if now - self._last_ping_at < self._ping_ttl_seconds:
-            return self._netease_alive
-        self._last_ping_at = now
-        try:
-            self._netease_alive = bool(client.ping())
-        except Exception:                                  # noqa: BLE001
-            self._netease_alive = False
+        self.schedule_netease_probe_if_due()
         return self._netease_alive
+
+    def schedule_netease_probe_if_due(self, *, force: bool = False) -> None:
+        if self._injected_client is not None:
+            return
+        with self._lock:
+            if self._client is None or not self._netease_base_url:
+                return
+            now = time.time()
+            if self._ping_inflight:
+                return
+            if not force and now - self._last_ping_at < self._ping_ttl_seconds:
+                return
+            self._ping_inflight = True
+            self._last_ping_at = now
+            base_url = self._netease_base_url
+
+        threading.Thread(
+            target=self._probe_netease_alive,
+            args=(base_url,),
+            name="netease-health-probe",
+            daemon=True,
+        ).start()
+
+    def _probe_netease_alive(self, base_url: str) -> None:
+        alive = False
+        try:
+            probe = NeteaseAPIClient(
+                base_url=base_url,
+                timeout=self._ping_timeout_seconds,
+                max_retries=0,
+            )
+            alive = bool(probe.ping())
+        except Exception as exc:                          # noqa: BLE001
+            log.debug("Background NetEase probe crashed: %s", exc)
+        with self._lock:
+            self._netease_alive = alive
+            self._last_ping_at = time.time()
+            self._ping_inflight = False
+        if alive:
+            log.info("NetEase API reachable.")
+        else:
+            log.warning(
+                "NetEase API at %s is offline; search and recommend will "
+                "use cache only until the local service returns.",
+                base_url,
+            )
 
     @property
     def kgrec_enabled(self) -> bool:
@@ -561,7 +592,9 @@ def create_app(
 
         try:
             hits = HOLDER.client.search_songs(q, limit=limit)
+            HOLDER.mark_netease_alive(True)
         except NeteaseAPIError as exc:
+            HOLDER.mark_netease_alive(False)
             return jsonify({
                 "ok":     False,
                 "error":  f"NetEase API unavailable: {exc}",
