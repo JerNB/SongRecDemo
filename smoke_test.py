@@ -1160,6 +1160,33 @@ def test_api_feedback_valid(client) -> None:
     _expect(bool(body.get("event_id")), f"no event_id returned: {body}")
 
 
+def test_api_feedback_frontend_payload_events(client) -> None:
+    """The event names sent by the recommendation-card UI are accepted."""
+    for event_type, event_value in (
+        ("not_interested", 0),
+        ("open_netease_url", 1),
+    ):
+        res = client.post("/api/feedback", json={
+            "request_id": "frontend-req-1",
+            "song_id": 12345,
+            "rank_position": 2,
+            "event_type": event_type,
+            "event_value": event_value,
+            "extra": {
+                "title": "Holocene",
+                "artist": "Bon Iver",
+                "pick_type": "balanced",
+                "source": "recommendation_card",
+            },
+        })
+        _expect(res.status_code == 200,
+                f"/api/feedback rejected {event_type}: {res.status_code} {res.data!r}")
+        body = res.get_json() or {}
+        _expect(body.get("ok") is True and body.get("logged") is True,
+                f"/api/feedback did not log {event_type}: {body}")
+        _expect(bool(body.get("event_id")), f"no event_id for {event_type}: {body}")
+
+
 def test_api_feedback_invalid_event_type(client) -> None:
     res = client.post("/api/feedback", json={
         "request_id": "abc", "song_id": 1, "event_type": "mind_meld",
@@ -1368,6 +1395,9 @@ def test_label_rules_correct() -> None:
     dislike = label_for_events(["like", "dislike"])
     _expect(dislike.binary == 0 and dislike.label == -1.0 and dislike.kind == "negative",
             f"dislike must override a like into a negative: {dislike}")
+    not_interested = label_for_events(["click", "not_interested"])
+    _expect(not_interested.binary == 0 and not_interested.label == -1.0 and not_interested.kind == "negative",
+            f"not_interested must override a click into a negative: {not_interested}")
     skip = label_for_events(["click", "skip"])
     _expect(skip.kind == "negative", f"skip must override a click: {skip}")
     imp = label_for_events(["impression"])
@@ -1641,22 +1671,23 @@ def main() -> int:
         ("30) FeedbackStore logs user_feedback + rejects bad type", lambda: test_feedback_store_logs_user_feedback()),
         ("31) FeedbackStore fail-soft on unknown request", lambda: test_feedback_store_failsoft_unknown_request()),
         ("32) /api/feedback valid event -> ok",            lambda: test_api_feedback_valid(client)),
-        ("33) /api/feedback invalid event -> 400",         lambda: test_api_feedback_invalid_event_type(client)),
-        ("34) recommend() auto-logs exposure + trace",     lambda: test_recommend_auto_logs_exposure(client, feedback)),
-        ("35) feedback failure doesn't break recommend",   lambda: test_feedback_failure_does_not_break_recommend()),
-        ("36) run_eval runs all seed profiles",            lambda: test_eval_runs_all_seed_profiles()),
-        ("37) metrics outputs all diagnostic keys",        lambda: test_metrics_outputs_all_keys()),
+        ("33) /api/feedback accepts frontend events",      lambda: test_api_feedback_frontend_payload_events(client)),
+        ("34) /api/feedback invalid event -> 400",         lambda: test_api_feedback_invalid_event_type(client)),
+        ("35) recommend() auto-logs exposure + trace",     lambda: test_recommend_auto_logs_exposure(client, feedback)),
+        ("36) feedback failure doesn't break recommend",   lambda: test_feedback_failure_does_not_break_recommend()),
+        ("37) run_eval runs all seed profiles",            lambda: test_eval_runs_all_seed_profiles()),
+        ("38) metrics outputs all diagnostic keys",        lambda: test_metrics_outputs_all_keys()),
         # --- P4: shadow learned ranker. ----------------------------------
-        ("38) dataset builder builds samples from store",  lambda: test_dataset_builder_from_store()),
-        ("39) weak-supervision label rules correct",       lambda: test_label_rules_correct()),
-        ("40) train_ranker fail-soft on too little data",  lambda: test_train_ranker_failsoft_insufficient()),
-        ("41) LearnedRanker fit/predict/save/load",        lambda: test_learned_ranker_fit_predict_save_load()),
-        ("42) shadow mode w/o model doesn't affect recs",  lambda: test_shadow_mode_missing_model_no_impact()),
-        ("43) shadow mode w/ model adds learned_score",    lambda: test_shadow_mode_with_model_adds_learned_score()),
-        ("44) learned_score never changes rule order",     lambda: test_learned_score_does_not_change_order()),
-        ("45) eval skips learned metrics w/o model",       lambda: test_eval_skips_learned_when_no_model()),
-        ("46) eval reports learned metrics w/ model",      lambda: test_eval_reports_learned_when_model_present()),
-        ("47) FeedbackStore health reports write counts",  lambda: test_feedback_store_health_reports_counts()),
+        ("39) dataset builder builds samples from store",  lambda: test_dataset_builder_from_store()),
+        ("40) weak-supervision label rules correct",       lambda: test_label_rules_correct()),
+        ("41) train_ranker fail-soft on too little data",  lambda: test_train_ranker_failsoft_insufficient()),
+        ("42) LearnedRanker fit/predict/save/load",        lambda: test_learned_ranker_fit_predict_save_load()),
+        ("43) shadow mode w/o model doesn't affect recs",  lambda: test_shadow_mode_missing_model_no_impact()),
+        ("44) shadow mode w/ model adds learned_score",    lambda: test_shadow_mode_with_model_adds_learned_score()),
+        ("45) learned_score never changes rule order",     lambda: test_learned_score_does_not_change_order()),
+        ("46) eval skips learned metrics w/o model",       lambda: test_eval_skips_learned_when_no_model()),
+        ("47) eval reports learned metrics w/ model",      lambda: test_eval_reports_learned_when_model_present()),
+        ("48) FeedbackStore health reports write counts",  lambda: test_feedback_store_health_reports_counts()),
     ]
 
     results: list[_Result] = []

@@ -8,6 +8,8 @@
     isSearching: false,
     loadingTimer: 0,
     loadingStageIndex: 0,
+    currentRequestId: "",
+    feedbackBySong: new Map(),
   };
   const $ = (id) => document.getElementById(id);
   const els = {
@@ -53,6 +55,11 @@
   };
   const NETEASE_OFFLINE_HINT = "NetEase service is offline. Start the local NetEase API on port 3000, then try again.";
   const BACKEND_HINT = "Backend is unreachable. Start the Flask demo server, then try again.";
+  const feedbackChoices = [
+    ["like", "Like", "Liked"],
+    ["dislike", "Dislike", "Disliked"],
+    ["not_interested", "Not interested", "Not interested"],
+  ];
 
   async function fetchJson(url, options = {}, timeoutMs = 8000) {
     const controller = new AbortController();
@@ -310,6 +317,97 @@
     const numeric = Number(value) || 0;
     return `<div class="score-row"><span>${escapeHtml(label)}</span><div class="score-bar"><span style="width: ${Math.max(0, Math.min(1, numeric)) * 100}%"></span></div><b>${numeric.toFixed(2)}</b></div>`;
   }
+  function feedbackKey(item) { return String(item?.netease_song_id || ""); }
+  function feedbackValue(eventType) {
+    if (eventType === "like") return 1;
+    if (eventType === "dislike") return -1;
+    return 0;
+  }
+  function getFeedbackState(songId) {
+    const key = String(songId || "");
+    if (!key) return { selected: "", pending: false, lastSubmitted: "", message: "" };
+    if (!state.feedbackBySong.has(key)) {
+      state.feedbackBySong.set(key, { selected: "", pending: false, lastSubmitted: "", message: "" });
+    }
+    return state.feedbackBySong.get(key);
+  }
+  function feedbackControlsMarkup(item) {
+    const songId = feedbackKey(item);
+    const buttons = feedbackChoices.map(([type, label]) =>
+      `<button type="button" class="feedback-btn" data-feedback-type="${type}" aria-label="${escapeHtml(label)} ${escapeHtml(item.title || "this song")}" aria-pressed="false">${escapeHtml(label)}</button>`).join("");
+    return `
+      <div class="feedback-panel" data-feedback-song="${escapeHtml(songId)}">
+        <div class="feedback-actions" role="group" aria-label="Feedback for ${escapeHtml(item.title || "this recommendation")}">
+          ${buttons}
+        </div>
+        <span class="feedback-status" aria-live="polite"></span>
+      </div>`;
+  }
+  function renderFeedbackState(card, item) {
+    const songId = feedbackKey(item);
+    const fb = getFeedbackState(songId);
+    const status = card.querySelector(".feedback-status");
+    const panel = card.querySelector(".feedback-panel");
+    if (panel) panel.setAttribute("aria-busy", fb.pending ? "true" : "false");
+    card.querySelectorAll("[data-feedback-type]").forEach((button) => {
+      const type = button.dataset.feedbackType;
+      const choice = feedbackChoices.find(([choiceType]) => choiceType === type);
+      const active = fb.selected === type;
+      button.disabled = fb.pending || !songId;
+      button.classList.toggle("active", active);
+      button.setAttribute("aria-pressed", active ? "true" : "false");
+      button.textContent = active && choice ? choice[2] : (choice ? choice[1] : type);
+    });
+    if (status) {
+      status.textContent = fb.pending ? "Saving..." : fb.message;
+      status.classList.toggle("is-error", fb.message === "Could not save feedback");
+    }
+  }
+  function feedbackPayload(item, eventType) {
+    return {
+      event_type: eventType,
+      request_id: state.currentRequestId || null,
+      song_id: Number(item.netease_song_id) || null,
+      rank_position: Number(item.rank) || null,
+      event_value: feedbackValue(eventType),
+      extra: {
+        title: item.title || "",
+        artist: item.artist || "",
+        pick_type: item.pick_type || "",
+        source: eventType === "open_netease_url" ? "netease_link" : "recommendation_card",
+      },
+    };
+  }
+  async function submitFeedback(item, eventType, card, options = {}) {
+    const songId = feedbackKey(item);
+    if (!songId) return;
+    const fb = getFeedbackState(songId);
+    const isChoice = feedbackChoices.some(([type]) => type === eventType);
+    if (isChoice && fb.lastSubmitted === eventType && !fb.pending) {
+      fb.message = "Already saved";
+      renderFeedbackState(card, item);
+      return;
+    }
+    if (isChoice) fb.selected = eventType;
+    fb.pending = true;
+    fb.message = "";
+    renderFeedbackState(card, item);
+    try {
+      const { response, body } = await fetchJson("/api/feedback", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(feedbackPayload(item, eventType)),
+      }, 5000);
+      if (!response.ok || body.ok === false) throw new Error(body.error || `Feedback failed (${response.status}).`);
+      fb.lastSubmitted = eventType;
+      fb.message = options.successMessage || "Feedback saved";
+    } catch {
+      fb.message = "Could not save feedback";
+    } finally {
+      fb.pending = false;
+      renderFeedbackState(card, item);
+    }
+  }
   function renderRecommendationCard(item, index) {
     const card = document.createElement("li");
     const featured = Number(item.rank || index + 1) === 1;
@@ -325,11 +423,22 @@
           <div><h3>${escapeHtml(item.title || "Untitled song")}</h3><p>${escapeHtml(item.artist || "Unknown artist")}${item.album ? ` - ${escapeHtml(item.album)}` : ""}</p></div>
           <span class="pick-badge ${escapeHtml(item.pick_type || "balanced")}">${escapeHtml(item.pick_type || "balanced")}</span>
         </div>
-        ${neteaseUrl ? `<a class="netease-link" href="${escapeHtml(neteaseUrl)}" target="_blank" rel="noopener noreferrer">Open on NetEase</a>` : ""}
+        ${neteaseUrl ? `<a class="netease-link" data-feedback-open="true" href="${escapeHtml(neteaseUrl)}" target="_blank" rel="noopener noreferrer">Open on NetEase</a>` : ""}
         <p class="explanation">${escapeHtml(item.explanation || "Recommended because it matches several parts of your taste profile.")}</p>
         <div class="reason-chips">${chips.map((chip, chipIndex) => `<span style="animation-delay:${Math.min(120 + chipIndex * 35, 320)}ms">${escapeHtml(chip)}</span>`).join("")}</div>
+        ${feedbackControlsMarkup(item)}
         <details class="why"><summary>Why this song?</summary><div class="score-list">${rows.map(([label, value]) => scoreRow(label, value)).join("")}</div></details>
       </div>`;
+    card.querySelectorAll("[data-feedback-type]").forEach((button) => {
+      button.addEventListener("click", () => submitFeedback(item, button.dataset.feedbackType, card));
+    });
+    const neteaseLink = card.querySelector("[data-feedback-open]");
+    if (neteaseLink) {
+      neteaseLink.addEventListener("click", () => {
+        submitFeedback(item, "open_netease_url", card, { successMessage: "Opened saved" });
+      });
+    }
+    renderFeedbackState(card, item);
     return card;
   }
   function renderTechnicalDetails(data) {
@@ -348,6 +457,8 @@
   }
   function renderResponse(data) {
     els.cards.innerHTML = ""; els.empty.hidden = true;
+    state.currentRequestId = data.request_id || "";
+    state.feedbackBySong.clear();
     els.resultsSubtitle.textContent = "Ranked songs based on your profile.";
     const items = data.items || [];
     if (!items.length) {

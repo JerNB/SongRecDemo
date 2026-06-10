@@ -17,7 +17,7 @@ Label rule (v1, weak supervision)
 ----------------------------------
 For each (request_id, song_id) we look at all feedback events:
 
-* any ``dislike`` / ``skip``                       -> label  -1.0  (negative,
+* any ``dislike`` / ``not_interested`` / ``skip``  -> label  -1.0  (negative,
   overrides everything else -- an explicit reject wins)
 * else ``like`` / ``add_to_playlist``              -> label  +1.0
 * else ``open_netease_url`` / ``play_preview`` /
@@ -68,7 +68,7 @@ LABEL_RULES: dict[str, float] = {
 }
 
 # Events that explicitly reject a card; these override any positive event.
-NEGATIVE_EVENTS: frozenset = frozenset({"dislike", "skip"})
+NEGATIVE_EVENTS: frozenset = frozenset({"dislike", "not_interested", "skip"})
 
 # Events that carry no preference signal on their own.
 NEUTRAL_EVENTS: frozenset = frozenset({"impression"})
