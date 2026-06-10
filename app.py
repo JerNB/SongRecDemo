@@ -64,6 +64,7 @@ from src.personalization.netease_enrichment import (  # noqa: E402
 
 # Local product-layer modules (live alongside this file).
 from SongRecDemo.netease_pipeline import (  # noqa: E402
+    FeedbackEventError,
     NeteaseRecommender,
     RealSongRequest,
     TrackRef,
@@ -121,6 +122,8 @@ class _ServiceHolder:
         # Test injection: an in-memory SongFeatureStore so the smoke test
         # never touches the on-disk catalogue.
         self._injected_feature_store: Any = None
+        # Test injection: an in-memory FeedbackStore (P3).
+        self._injected_feedback_store: Any = None
 
     # ------------------------------------------------------------------
     # Lifecycle
@@ -133,18 +136,21 @@ class _ServiceHolder:
         cache: Any,
         netease_alive: bool = True,
         feature_store: Any = None,
+        feedback_store: Any = None,
     ) -> None:
         """Smoke-test hook -- swap in a fake NetEase client + cache.
 
         ``feature_store`` lets the hermetic smoke test inject an in-memory
         :class:`SongFeatureStore` so the embedding recall channel can be
-        exercised without writing to the on-disk catalogue.
+        exercised without writing to the on-disk catalogue. ``feedback_store``
+        likewise injects an in-memory :class:`FeedbackStore` (P3).
         """
         with self._lock:
             self._injected_client = client
             self._injected_cache = cache
             self._netease_alive = bool(netease_alive)
             self._injected_feature_store = feature_store
+            self._injected_feedback_store = feedback_store
 
     def init(
         self,
@@ -190,6 +196,7 @@ class _ServiceHolder:
                 client=self._client,
                 cache=self._cache,
                 feature_store=self._injected_feature_store,
+                feedback_store=self._injected_feedback_store,
             )
 
             # ----- Research layer (optional) ------------------------
@@ -610,6 +617,57 @@ def create_app(
             return jsonify({"ok": False, "error": f"Internal error: {exc}"}), 500
 
         return jsonify({"ok": True, "data": resp.to_dict()})
+
+    # ------------------------------------------------------------------
+    # /api/feedback -- record a user interaction (P3).
+    #
+    # Fire-and-forget logging that never affects the recommendation path.
+    # The event_type is validated against a whitelist; an unknown one is a
+    # 400. An unknown request_id is accepted (fail-soft) -- the event is
+    # still recorded so the frontend never has to block on server state.
+    # ------------------------------------------------------------------
+
+    @app.post("/api/feedback")
+    def feedback() -> Any:
+        _ensure()
+        if not request.is_json:
+            return jsonify({"ok": False, "error": "Content-Type must be application/json"}), 415
+        try:
+            payload = request.get_json(silent=False) or {}
+        except Exception as exc:                           # noqa: BLE001
+            return jsonify({"ok": False, "error": f"Invalid JSON: {exc}"}), 400
+        if not isinstance(payload, dict):
+            return jsonify({"ok": False, "error": "Request body must be a JSON object."}), 400
+
+        store = HOLDER.recommender.feedback_store
+        if store is None:
+            # Logging disabled: don't fail the frontend, just no-op.
+            return jsonify({"ok": True, "logged": False,
+                            "note": "feedback logging is disabled"})
+
+        event_type = str(payload.get("event_type") or "").strip().lower()
+        extra = payload.get("extra")
+        if extra is not None and not isinstance(extra, dict):
+            extra = {"value": extra}
+
+        try:
+            event_id = store.log_user_feedback(
+                event_type=event_type,
+                request_id=(str(payload["request_id"])
+                            if payload.get("request_id") not in (None, "") else None),
+                song_id=payload.get("song_id"),
+                rank_position=payload.get("rank_position"),
+                event_value=payload.get("event_value"),
+                extra=extra,
+            )
+        except FeedbackEventError as exc:
+            return jsonify({"ok": False, "error": str(exc)}), 400
+        except Exception as exc:                           # noqa: BLE001
+            log.warning("/api/feedback failed: %s", exc)
+            # Fail-soft: never surface a 500 for a logging miss.
+            return jsonify({"ok": True, "logged": False, "error": str(exc)})
+
+        return jsonify({"ok": True, "logged": True, "event_id": event_id})
 
     # ------------------------------------------------------------------
     # /api/kgrec-recommend -- developer-only debug route.

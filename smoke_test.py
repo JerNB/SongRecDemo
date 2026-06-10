@@ -55,16 +55,35 @@ from netease_pipeline import (                      # noqa: E402
     Embedder,
     EmbeddingRetriever,
     FakeNeteaseClient,
+    FeedbackEventError,
+    FeedbackStore,
+    LearnedRanker,
     NeteaseRecommender,
     ProfileBuilder,
     RealSongRequest,
     SongFeatureStore,
     SourceHit,
     TrackRef,
+    build_training_data,
+    label_for_events,
     _norm_title,
     merge_candidates_into,
 )
+from SongRecDemo.learning.dataset import (          # noqa: E402
+    extract_feature_dict,
+    feature_names_for,
+    feature_vector,
+)
+from SongRecDemo.learning.train_ranker import train_from_store   # noqa: E402
 from SongRecDemo.pipeline.scoring import multi_source_agreement   # noqa: E402
+from SongRecDemo.evaluation import (                # noqa: E402
+    compute_all_metrics,
+    load_seed_profiles,
+)
+from SongRecDemo.evaluation.run_eval import (       # noqa: E402
+    build_default_recommender,
+    run_evaluation,
+)
 
 
 # ---------------------------------------------------------------------------
@@ -355,13 +374,19 @@ def make_client():
     # embedding behaviour is exercised by dedicated component-level tests
     # below (which construct their own recommender with recall enabled).
     config.EMBEDDING_RECALL_ENABLED = False
+    # P3: feedback logging ON for the shared app, backed by an in-memory
+    # store so the auto-exposure logging and /api/feedback can be asserted
+    # without touching the on-disk feedback DB.
+    config.FEEDBACK_LOGGING_ENABLED = True
     store = SongFeatureStore(":memory:")
+    feedback = FeedbackStore(":memory:")
     HOLDER.inject_for_tests(
-        client=fake, cache=cache, netease_alive=True, feature_store=store,
+        client=fake, cache=cache, netease_alive=True,
+        feature_store=store, feedback_store=feedback,
     )
     app = create_app(eager=True, load_kgrec=False)
     app.testing = True
-    return app.test_client(), fake
+    return app.test_client(), fake, feedback
 
 
 def test_health(client) -> None:
@@ -1053,13 +1078,529 @@ def test_content_weight_changes_ranking(client) -> None:
 
 
 # ---------------------------------------------------------------------------
+# P3: feedback logging + offline evaluation tests
+# ---------------------------------------------------------------------------
+
+def test_feedback_store_logs_request() -> None:
+    store = FeedbackStore(":memory:")
+    ok = store.log_request({
+        "request_id": "req-1", "content_weight": 0.5, "novelty": 0.3,
+        "diversity": 0.3, "k": 10, "num_final_candidates": 7,
+        "model_version": "p3-feedback-eval",
+    })
+    _expect(ok is True, "log_request returned False")
+    _expect(store.count("recommendation_request") == 1,
+            f"expected 1 request row, got {store.count('recommendation_request')}")
+    row = store.get_request("req-1")
+    _expect(row is not None, "request row not found")
+    _expect(row["model_version"] == "p3-feedback-eval",
+            f"model_version not stored: {row}")
+    _expect(int(row["k"]) == 10, f"k not stored: {row}")
+
+
+def test_feedback_store_logs_items() -> None:
+    store = FeedbackStore(":memory:")
+    n = store.log_items("req-2", [
+        {"song_id": 111, "rank_position": 1, "final_score": 0.8,
+         "rank_score": 0.7, "content_score": 0.6, "retrieval_score": 0.5,
+         "multi_source_agreement": 0.4, "quality_score": 0.9,
+         "novelty_score": 0.2, "source_types": ["artist", "embedding"],
+         "reasons": ["because"], "pick_type": "safe"},
+        {"song_id": 222, "rank_position": 2, "final_score": 0.7,
+         "source_types": ["genre"], "reasons": [], "pick_type": "balanced"},
+    ])
+    _expect(n == 2, f"expected 2 item rows, got {n}")
+    rows = store.get_items("req-2")
+    _expect(len(rows) == 2, f"get_items returned {len(rows)}")
+    _expect(rows[0]["song_id"] == 111, f"wrong first item: {rows[0]}")
+    _expect(rows[0]["was_impressed"] == 1, f"was_impressed should default True: {rows[0]}")
+    _expect("embedding" in rows[0]["source_types_json"],
+            f"source_types not stored: {rows[0]}")
+
+
+def test_feedback_store_logs_user_feedback() -> None:
+    store = FeedbackStore(":memory:")
+    eid = store.log_user_feedback(
+        event_type="like", request_id="req-3", song_id=333,
+        rank_position=2, event_value=1, extra={"source": "recommendation_card"},
+    )
+    _expect(bool(eid), "no event_id returned")
+    _expect(store.count("user_feedback") == 1,
+            f"expected 1 feedback row, got {store.count('user_feedback')}")
+    rows = store.get_feedback("req-3")
+    _expect(len(rows) == 1 and rows[0]["event_type"] == "like",
+            f"feedback not stored correctly: {rows}")
+    # Unknown event_type must be rejected.
+    raised = False
+    try:
+        store.log_user_feedback(event_type="telepathic_love", song_id=1)
+    except FeedbackEventError:
+        raised = True
+    _expect(raised, "invalid event_type should raise FeedbackEventError")
+
+
+def test_feedback_store_failsoft_unknown_request() -> None:
+    """An unknown request_id is accepted (fail-soft); the row is still written."""
+    store = FeedbackStore(":memory:")
+    eid = store.log_user_feedback(event_type="click", request_id="never-seen", song_id=9)
+    _expect(bool(eid), "fail-soft feedback for unknown request should still log")
+    _expect(store.count("user_feedback") == 1, "feedback row not written")
+
+
+def test_api_feedback_valid(client) -> None:
+    res = client.post("/api/feedback", json={
+        "request_id": "abc", "song_id": 12345, "rank_position": 3,
+        "event_type": "like", "event_value": 1,
+        "extra": {"source": "recommendation_card"},
+    })
+    _expect(res.status_code == 200, f"/api/feedback returned {res.status_code}")
+    body = res.get_json() or {}
+    _expect(body.get("ok") is True, f"/api/feedback ok=False: {body}")
+    _expect(body.get("logged") is True, f"/api/feedback did not log: {body}")
+    _expect(bool(body.get("event_id")), f"no event_id returned: {body}")
+
+
+def test_api_feedback_invalid_event_type(client) -> None:
+    res = client.post("/api/feedback", json={
+        "request_id": "abc", "song_id": 1, "event_type": "mind_meld",
+    })
+    _expect(res.status_code == 400,
+            f"invalid event_type should be 400, got {res.status_code}: {res.data!r}")
+    body = res.get_json() or {}
+    _expect(body.get("ok") is False, f"invalid event_type ok=True: {body}")
+
+
+def test_recommend_auto_logs_exposure(client, feedback) -> None:
+    rid = "smoke-exposure-1"
+    res = client.post("/api/recommend", json={
+        "liked_artists": ["Bon Iver"], "genres": ["indie folk"],
+        "k": 5, "request_id": rid,
+    })
+    _expect(res.status_code == 200, f"recommend returned {res.status_code}")
+    data = (res.get_json() or {})["data"]
+    items = data.get("items") or []
+    _expect(items, "no recommendations to have logged")
+
+    req_row = feedback.get_request(rid)
+    _expect(req_row is not None, "recommend() did not log a recommendation_request")
+    _expect(req_row["model_version"] == config.PIPELINE_VERSION,
+            f"request row missing model_version: {req_row}")
+    logged_items = feedback.get_items(rid)
+    _expect(len(logged_items) == len(items),
+            f"logged {len(logged_items)} items but returned {len(items)}")
+
+    # Trace must report the logging happened.
+    trace = data.get("trace") or {}
+    _expect(trace.get("feedback_logging_enabled") is True,
+            f"trace should report feedback enabled: {trace}")
+    _expect(trace.get("feedback_request_logged") is True,
+            f"trace should report request logged: {trace}")
+    _expect(int(trace.get("feedback_items_logged") or 0) == len(items),
+            f"trace feedback_items_logged mismatch: {trace}")
+    _expect(trace.get("model_version") == config.PIPELINE_VERSION,
+            f"trace missing model_version: {trace}")
+
+
+def test_feedback_failure_does_not_break_recommend() -> None:
+    """A broken feedback store must never break the recommendation path."""
+    class _BrokenFeedbackStore(FeedbackStore):
+        def log_request(self, payload):  # type: ignore[override]
+            raise RuntimeError("disk on fire")
+
+        def log_items(self, request_id, items):  # type: ignore[override]
+            raise RuntimeError("disk still on fire")
+
+    fake = FakeNeteaseClient(
+        responses=CANNED, default=_indie_mix(),
+        enrichments=_enrichments(), alive=True,
+    )
+    rec = NeteaseRecommender(
+        client=fake, cache=_MemoryQueryCache(),
+        feature_store=SongFeatureStore(":memory:"),
+        embedding_recall_enabled=False,
+        feedback_store=_BrokenFeedbackStore(":memory:"),
+        feedback_logging_enabled=True,
+    )
+    resp = rec.recommend(RealSongRequest(liked_artists=["Bon Iver"], k=5))
+    _expect(len(resp.items) > 0,
+            "broken feedback logging should not stop recommendations")
+    trace = resp.trace or {}
+    _expect(trace.get("feedback_request_logged") is False,
+            "broken logging should leave feedback_request_logged False")
+
+
+def test_eval_runs_all_seed_profiles() -> None:
+    profiles = load_seed_profiles()
+    _expect(len(profiles) >= 10,
+            f"expected >= 10 seed profiles, got {len(profiles)}")
+    recommender = build_default_recommender(offline=True)
+    report = run_evaluation(recommender, profiles, k=10)
+    _expect(report.get("report_type") == "diagnostic",
+            f"report should be diagnostic: {report.get('report_type')}")
+    _expect(len(report.get("profiles") or []) == len(profiles),
+            f"report should cover all profiles: {len(report.get('profiles') or [])}")
+    for row in report["profiles"]:
+        _expect("error" not in row, f"profile run errored: {row}")
+    _expect(bool(report.get("aggregate")), "report missing aggregate summary")
+    _expect(report.get("report_type") == "diagnostic",
+            "report must be explicitly typed diagnostic")
+    # No accuracy metric should be reported (only the honest disclaimer note
+    # may *mention* them in prose). Inspect the computed metric keys.
+    metric_keys: set[str] = set()
+    for row in report["profiles"]:
+        metric_keys |= set((row.get("metrics") or {}).keys())
+    accuracy_keys = {"precision", "recall", "ndcg", "mrr",
+                     "precision_at_k", "ndcg_at_k", "average_relevance"}
+    _expect(not (metric_keys & accuracy_keys),
+            f"diagnostic report leaked accuracy metric keys: {metric_keys & accuracy_keys}")
+
+
+def test_metrics_outputs_all_keys() -> None:
+    """metrics.compute_all_metrics emits every required diagnostic metric."""
+    recommender = build_default_recommender(offline=True)
+    profiles = load_seed_profiles()
+    resp = recommender.recommend(profiles[0].to_request(k=10))
+    data = resp.to_dict()
+    metrics = compute_all_metrics(data["items"], data.get("trace"), k=10)
+    for key in ("coverage", "diversity", "novelty", "source_mix",
+                "embedding_share", "duplicate_rate", "score_distribution",
+                "latency_ms"):
+        _expect(key in metrics, f"metrics missing `{key}`: {sorted(metrics)}")
+    _expect(set(metrics["coverage"]) >= {"unique_artists", "unique_albums",
+                                         "unique_source_types"},
+            f"coverage missing sub-keys: {metrics['coverage']}")
+    _expect(set(metrics["duplicate_rate"]) == {"artist", "title", "album"},
+            f"duplicate_rate missing sub-keys: {metrics['duplicate_rate']}")
+    _expect(set(metrics["score_distribution"]) == {"final_score", "rank_score"},
+            f"score_distribution missing sub-keys: {metrics['score_distribution']}")
+    _expect(isinstance(metrics["diversity"], float),
+            f"diversity should be a float: {metrics['diversity']}")
+
+
+# ---------------------------------------------------------------------------
+# P4: shadow learned ranker tests
+# ---------------------------------------------------------------------------
+
+def _populate_feedback_for_training(store: FeedbackStore, *, n_requests: int = 40) -> None:
+    """Fill a FeedbackStore with exposures + a mix of like/click/impression
+    feedback so a learned ranker can train with both classes present."""
+    for r in range(n_requests):
+        rid = f"train-req-{r}"
+        store.log_request({
+            "request_id": rid, "content_weight": 0.5, "novelty": 0.3,
+            "diversity": 0.3, "k": 3, "model_version": "p3-feedback-eval",
+        })
+        items = []
+        for pos in range(3):
+            sid = 1000 * r + pos
+            items.append({
+                "song_id": sid, "rank_position": pos + 1,
+                "final_score": 0.5 + 0.1 * pos, "rank_score": 0.5,
+                "content_score": 0.6 if pos == 0 else 0.2,
+                "retrieval_score": 0.4, "multi_source_agreement": 0.3,
+                "quality_score": 0.7, "novelty_score": 0.2,
+                "source_types": ["artist", "genre"] if pos == 0 else ["embedding"],
+                "reasons": [], "pick_type": "safe" if pos == 0 else "balanced",
+            })
+        store.log_items(rid, items)
+        # The strongest card is liked; the second is clicked; the third is an
+        # impression-only weak negative.
+        store.log_user_feedback(event_type="like", request_id=rid, song_id=1000 * r + 0)
+        if r % 2 == 0:
+            store.log_user_feedback(event_type="click", request_id=rid, song_id=1000 * r + 1)
+
+
+def _tiny_trained_ranker() -> LearnedRanker:
+    """Train a small LearnedRanker whose feature schema matches live cards."""
+    pos_item = {
+        "content_score": 0.85, "retrieval_score": 0.75,
+        "multi_source_agreement": 0.6, "quality_score": 0.8,
+        "novelty_score": 0.2, "final_score": 0.9, "rank_score": 0.9,
+        "rank_position": 1, "source_types": ["artist", "genre"],
+        "pick_type": "safe",
+    }
+    neg_item = {
+        "content_score": 0.1, "retrieval_score": 0.1,
+        "multi_source_agreement": 0.1, "quality_score": 0.3,
+        "novelty_score": 0.6, "final_score": 0.2, "rank_score": 0.2,
+        "rank_position": 9, "source_types": ["embedding"],
+        "pick_type": "balanced",
+    }
+    req = {"content_weight": 0.5, "novelty": 0.3, "diversity": 0.3}
+    dicts: list[dict[str, float]] = []
+    ys: list[int] = []
+    for _ in range(30):
+        dicts.append(extract_feature_dict(pos_item, req)); ys.append(1)
+        dicts.append(extract_feature_dict(neg_item, req)); ys.append(0)
+    names = feature_names_for(dicts)
+    X = [feature_vector(d, names) for d in dicts]
+    return LearnedRanker(feature_names=names).fit(X, ys)
+
+
+def test_dataset_builder_from_store() -> None:
+    store = FeedbackStore(":memory:")
+    _populate_feedback_for_training(store, n_requests=10)
+    data = build_training_data(store)
+    _expect(data.num_samples == 30,
+            f"expected 30 samples (10 reqs x 3 cards), got {data.num_samples}")
+    _expect(len(data.X) == len(data.y) == len(data.sample_weight) == 30,
+            "X / y / sample_weight length mismatch")
+    _expect(len(data.feature_names) == len(data.X[0]),
+            "feature vector width must match feature_names")
+    for name in ("content_score", "rank_position", "has_embedding_source",
+                 "num_source_types", "pick_type_safe", "content_weight"):
+        _expect(name in data.feature_names, f"feature {name!r} missing: {data.feature_names}")
+    _expect(data.positive_count >= 1 and data.weak_negative_count >= 1,
+            f"expected mixed labels: {data.summary()}")
+
+
+def test_label_rules_correct() -> None:
+    like = label_for_events(["impression", "like"])
+    _expect(like.binary == 1 and like.label == 1.0 and like.kind == "positive",
+            f"like should be a strong positive: {like}")
+    addp = label_for_events(["add_to_playlist"])
+    _expect(addp.label == 1.0, f"add_to_playlist should be 1.0: {addp}")
+    click = label_for_events(["click"])
+    _expect(click.binary == 1 and abs(click.label - 0.7) < 1e-9,
+            f"click should be a 0.7 positive: {click}")
+    why = label_for_events(["why_clicked"])
+    _expect(abs(why.label - 0.5) < 1e-9, f"why_clicked should be 0.5: {why}")
+    dislike = label_for_events(["like", "dislike"])
+    _expect(dislike.binary == 0 and dislike.label == -1.0 and dislike.kind == "negative",
+            f"dislike must override a like into a negative: {dislike}")
+    skip = label_for_events(["click", "skip"])
+    _expect(skip.kind == "negative", f"skip must override a click: {skip}")
+    imp = label_for_events(["impression"])
+    _expect(imp.kind == "weak_negative" and imp.label == 0.0 and imp.sample_weight < 1.0,
+            f"impression-only should be a low-weight weak negative: {imp}")
+    none = label_for_events([])
+    _expect(none.kind == "weak_negative",
+            f"no feedback should be a weak negative: {none}")
+
+
+def test_train_ranker_failsoft_insufficient() -> None:
+    """Too little data -> trained=False, no exception, nothing saved."""
+    store = FeedbackStore(":memory:")
+    _populate_feedback_for_training(store, n_requests=2)  # only 6 samples
+    summary = train_from_store(store, min_samples=50, save=False)
+    _expect(summary["trained"] is False,
+            f"should not train on too little data: {summary}")
+    _expect("reason" in summary and "samples" in summary["reason"],
+            f"should explain the skip: {summary}")
+    _expect(summary["num_samples"] == 6, f"sample count wrong: {summary}")
+
+
+def test_learned_ranker_fit_predict_save_load() -> None:
+    import os
+    import tempfile
+
+    ranker = _tiny_trained_ranker()
+    _expect(ranker.is_fitted, "ranker should be fitted")
+    feats_pos = extract_feature_dict(
+        {"content_score": 0.85, "retrieval_score": 0.75,
+         "multi_source_agreement": 0.6, "quality_score": 0.8,
+         "novelty_score": 0.2, "final_score": 0.9, "rank_score": 0.9,
+         "rank_position": 1, "source_types": ["artist", "genre"],
+         "pick_type": "safe"},
+        {"content_weight": 0.5, "novelty": 0.3, "diversity": 0.3},
+    )
+    s = ranker.predict_score(feats_pos)
+    _expect(0.0 <= s <= 1.0, f"learned_score must be in [0,1]: {s}")
+    path = os.path.join(tempfile.mkdtemp(), "lr.joblib")
+    ranker.save(path)
+    _expect(os.path.exists(path), "model file not written")
+    reloaded = LearnedRanker.load(path)
+    _expect(reloaded.is_fitted, "reloaded ranker should be fitted")
+    s2 = reloaded.predict_score(feats_pos)
+    _expect(abs(s - s2) < 1e-9, f"reloaded score differs: {s} vs {s2}")
+    _expect(reloaded.feature_names == ranker.feature_names,
+            "reloaded feature_names differ")
+
+
+def test_shadow_mode_missing_model_no_impact() -> None:
+    """Shadow mode on but no model file -> recommendations unaffected."""
+    fake = FakeNeteaseClient(
+        responses=CANNED, default=_indie_mix(),
+        enrichments=_enrichments(), alive=True,
+    )
+    rec = NeteaseRecommender(
+        client=fake, cache=_MemoryQueryCache(),
+        feature_store=SongFeatureStore(":memory:"),
+        embedding_recall_enabled=False,
+        feedback_logging_enabled=False,
+        learned_ranker_shadow_mode=True,
+        learned_ranker_model_path="C:/this/path/does/not/exist.joblib",
+    )
+    resp = rec.recommend(RealSongRequest(liked_artists=["Bon Iver"], k=5))
+    _expect(len(resp.items) > 0, "missing model should not stop recommendations")
+    for card in resp.items:
+        _expect("learned_score" not in (card.score_breakdown or {}),
+                "no learned_score should appear without a model")
+        _expect(card.learned_rank_position is None,
+                "no learned_rank_position without a model")
+    trace = resp.trace or {}
+    _expect(trace.get("learned_ranker_loaded") is False,
+            f"trace should report no model loaded: {trace}")
+
+
+def test_shadow_mode_with_model_adds_learned_score() -> None:
+    """Shadow mode + a model -> learned_score in score_breakdown, order intact."""
+    ranker = _tiny_trained_ranker()
+    fake = FakeNeteaseClient(
+        responses=CANNED, default=_indie_mix(),
+        enrichments=_enrichments(), alive=True,
+    )
+    rec = NeteaseRecommender(
+        client=fake, cache=_MemoryQueryCache(),
+        feature_store=SongFeatureStore(":memory:"),
+        embedding_recall_enabled=False,
+        feedback_logging_enabled=False,
+        learned_ranker=ranker,
+        learned_ranker_shadow_mode=True,
+    )
+    resp = rec.recommend(RealSongRequest(
+        liked_artists=["Bon Iver"], genres=["indie folk"], k=6,
+    ))
+    _expect(len(resp.items) > 0, "no recommendations to shadow-score")
+    positions = set()
+    for card in resp.items:
+        bd = card.score_breakdown or {}
+        _expect("learned_score" in bd,
+                f"score_breakdown missing learned_score: {sorted(bd)}")
+        _expect(0.0 <= float(bd["learned_score"]) <= 1.0,
+                f"learned_score out of range: {bd['learned_score']}")
+        _expect(card.learned_rank_position is not None,
+                "learned_rank_position should be set in shadow mode")
+        positions.add(int(card.learned_rank_position))
+    _expect(positions == set(range(1, len(resp.items) + 1)),
+            f"learned_rank_position should be a 1..n permutation: {sorted(positions)}")
+    trace = resp.trace or {}
+    _expect(trace.get("learned_ranker_loaded") is True,
+            f"trace should report model loaded: {trace}")
+    _expect(int(trace.get("num_learned_scored") or 0) == len(resp.items),
+            f"trace num_learned_scored mismatch: {trace}")
+    # The serialised card must surface the learned fields too.
+    d0 = resp.items[0].to_dict()
+    _expect("learned_score" in d0.get("score_breakdown", {}),
+            "serialised card missing learned_score in score_breakdown")
+    _expect("learned_rank_position" in d0,
+            "serialised card missing learned_rank_position")
+
+
+def test_learned_score_does_not_change_order() -> None:
+    """The shadow learned score must NEVER change the rule ordering."""
+    ranker = _tiny_trained_ranker()
+
+    def _run(with_shadow: bool):
+        fake = FakeNeteaseClient(
+            responses=CANNED, default=_indie_mix(),
+            enrichments=_enrichments(), alive=True,
+        )
+        rec = NeteaseRecommender(
+            client=fake, cache=_MemoryQueryCache(),
+            feature_store=SongFeatureStore(":memory:"),
+            embedding_recall_enabled=False,
+            feedback_logging_enabled=False,
+            learned_ranker=ranker if with_shadow else None,
+            learned_ranker_shadow_mode=with_shadow,
+        )
+        return rec.recommend(RealSongRequest(
+            liked_artists=["Bon Iver"], genres=["indie folk"],
+            moods=["mellow"], k=8, novelty=0.0, diversity=0.0,
+        ))
+
+    base = _run(False)
+    shadow = _run(True)
+    base_ids = [it.track.netease_song_id for it in base.items]
+    shadow_ids = [it.track.netease_song_id for it in shadow.items]
+    _expect(base_ids == shadow_ids,
+            f"shadow scoring changed the order: {base_ids} != {shadow_ids}")
+    base_final = [round(it.score_breakdown["final_score"], 6) for it in base.items]
+    shadow_final = [round(it.score_breakdown["final_score"], 6) for it in shadow.items]
+    _expect(base_final == shadow_final,
+            f"shadow scoring changed final_score: {base_final} != {shadow_final}")
+
+
+def test_eval_skips_learned_when_no_model() -> None:
+    """With no learned model, the eval harness emits no learned_shadow key."""
+    fake = FakeNeteaseClient(
+        responses=CANNED, default=_indie_mix(),
+        enrichments=_enrichments(), alive=True,
+    )
+    rec = NeteaseRecommender(
+        client=fake, cache=_MemoryQueryCache(),
+        feature_store=SongFeatureStore(":memory:"),
+        embedding_recall_enabled=False,
+        feedback_logging_enabled=False,
+        learned_ranker_shadow_mode=False,
+    )
+    profiles = load_seed_profiles()
+    report = run_evaluation(rec, profiles, k=10)
+    for row in report["profiles"]:
+        metrics = row.get("metrics") or {}
+        _expect("learned_shadow" not in metrics,
+                f"learned_shadow should be skipped without a model: {row.get('profile_id')}")
+    agg = report.get("aggregate") or {}
+    _expect("learned_shadow" not in agg,
+            f"aggregate should not carry learned_shadow without a model: {agg}")
+
+
+def test_eval_reports_learned_when_model_present() -> None:
+    """With a model + shadow mode, the eval harness reports the comparison."""
+    ranker = _tiny_trained_ranker()
+    fake = FakeNeteaseClient(
+        responses=CANNED, default=_indie_mix(),
+        enrichments=_enrichments(), alive=True,
+    )
+    rec = NeteaseRecommender(
+        client=fake, cache=_MemoryQueryCache(),
+        feature_store=SongFeatureStore(":memory:"),
+        embedding_recall_enabled=False,
+        feedback_logging_enabled=False,
+        learned_ranker=ranker,
+        learned_ranker_shadow_mode=True,
+    )
+    profiles = load_seed_profiles()
+    report = run_evaluation(rec, profiles, k=10)
+    seen = False
+    for row in report["profiles"]:
+        ls = (row.get("metrics") or {}).get("learned_shadow")
+        if ls:
+            seen = True
+            for key in ("learned_score_distribution",
+                        "rank_correlation_between_rule_and_learned",
+                        "top_k_overlap_between_rule_and_learned",
+                        "cases_where_model_disagrees"):
+                _expect(key in ls, f"learned_shadow missing {key}: {ls}")
+    _expect(seen, "expected at least one profile to carry learned_shadow metrics")
+
+
+def test_feedback_store_health_reports_counts() -> None:
+    store = FeedbackStore(":memory:")
+    h0 = store.get_health()
+    _expect(h0["healthy"] is True, f"fresh store should be healthy: {h0}")
+    _expect(h0["write_success_count"] == 0 and h0["write_failure_count"] == 0,
+            f"fresh store counters should be zero: {h0}")
+    store.log_request({"request_id": "h1", "k": 3})
+    store.log_items("h1", [{"song_id": 1, "rank_position": 1, "source_types": []}])
+    store.log_user_feedback(event_type="like", request_id="h1", song_id=1)
+    h1 = store.get_health()
+    _expect(h1["write_success_count"] == 3,
+            f"expected 3 successful writes: {h1}")
+    _expect(h1["write_failure_count"] == 0 and h1["healthy"] is True,
+            f"no failures expected: {h1}")
+    _expect(store.write_success_count == 3 and store.write_failure_count == 0,
+            "property accessors disagree with get_health()")
+
+
+# ---------------------------------------------------------------------------
 # Main
 # ---------------------------------------------------------------------------
 
 def main() -> int:
     print("Building Flask app with FakeNeteaseClient (no network) ...", flush=True)
     try:
-        client, fake = make_client()
+        client, fake, feedback = make_client()
     except Exception as exc:                  # noqa: BLE001
         print(f"\n[FATAL] Could not build the app: {type(exc).__name__}: {exc}")
         traceback.print_exc()
@@ -1094,6 +1635,28 @@ def main() -> int:
         ("25) embedding recall via recommender + trace",   lambda: test_embedding_recall_via_recommender_trace()),
         ("26) empty feature_store still recommends",       lambda: test_empty_feature_store_still_recommends()),
         ("27) content_weight still changes ranking",       lambda: test_content_weight_changes_ranking(client)),
+        # --- P3: feedback logging + offline evaluation. ------------------
+        ("28) FeedbackStore logs recommendation_request",  lambda: test_feedback_store_logs_request()),
+        ("29) FeedbackStore logs recommendation_item",     lambda: test_feedback_store_logs_items()),
+        ("30) FeedbackStore logs user_feedback + rejects bad type", lambda: test_feedback_store_logs_user_feedback()),
+        ("31) FeedbackStore fail-soft on unknown request", lambda: test_feedback_store_failsoft_unknown_request()),
+        ("32) /api/feedback valid event -> ok",            lambda: test_api_feedback_valid(client)),
+        ("33) /api/feedback invalid event -> 400",         lambda: test_api_feedback_invalid_event_type(client)),
+        ("34) recommend() auto-logs exposure + trace",     lambda: test_recommend_auto_logs_exposure(client, feedback)),
+        ("35) feedback failure doesn't break recommend",   lambda: test_feedback_failure_does_not_break_recommend()),
+        ("36) run_eval runs all seed profiles",            lambda: test_eval_runs_all_seed_profiles()),
+        ("37) metrics outputs all diagnostic keys",        lambda: test_metrics_outputs_all_keys()),
+        # --- P4: shadow learned ranker. ----------------------------------
+        ("38) dataset builder builds samples from store",  lambda: test_dataset_builder_from_store()),
+        ("39) weak-supervision label rules correct",       lambda: test_label_rules_correct()),
+        ("40) train_ranker fail-soft on too little data",  lambda: test_train_ranker_failsoft_insufficient()),
+        ("41) LearnedRanker fit/predict/save/load",        lambda: test_learned_ranker_fit_predict_save_load()),
+        ("42) shadow mode w/o model doesn't affect recs",  lambda: test_shadow_mode_missing_model_no_impact()),
+        ("43) shadow mode w/ model adds learned_score",    lambda: test_shadow_mode_with_model_adds_learned_score()),
+        ("44) learned_score never changes rule order",     lambda: test_learned_score_does_not_change_order()),
+        ("45) eval skips learned metrics w/o model",       lambda: test_eval_skips_learned_when_no_model()),
+        ("46) eval reports learned metrics w/ model",      lambda: test_eval_reports_learned_when_model_present()),
+        ("47) FeedbackStore health reports write counts",  lambda: test_feedback_store_health_reports_counts()),
     ]
 
     results: list[_Result] = []

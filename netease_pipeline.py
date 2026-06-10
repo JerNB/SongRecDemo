@@ -26,6 +26,8 @@ from SongRecDemo.pipeline import (  # noqa: F401
     Explainer,
     FakeNeteaseClient,
     FeatureEnricher,
+    FeedbackEventError,
+    FeedbackStore,
     NeteaseRecommender,
     ProfileBuilder,
     QueryPlanner,
@@ -55,6 +57,17 @@ from SongRecDemo.pipeline.types import (  # noqa: F401
     _RetrievalQuery,
     _SourceHit,
     _merge_track,
+)
+
+# P4: shadow learned ranker (training + inference). Imported here so callers
+# (and the smoke test) can reach them through the same facade.
+from SongRecDemo.learning import (  # noqa: F401
+    LearnedRanker,
+    TrainingData,
+    build_training_data,
+    extract_feature_dict,
+    feature_dict_from_card,
+    label_for_events,
 )
 
 # Tokenisation / vector helpers used by the smoke test and any callers
@@ -100,10 +113,19 @@ __all__ = [
     "SongFeatureRecord",
     "Embedder",
     "EmbeddingMatch",
+    "FeedbackStore",
+    "FeedbackEventError",
     "UserProfile",
     "Candidate",
     "CandidateEnrichment",
     "RetrievalQuery",
     "SourceHit",
     "merge_candidates_into",
+    # P4: shadow learned ranker.
+    "LearnedRanker",
+    "TrainingData",
+    "build_training_data",
+    "extract_feature_dict",
+    "feature_dict_from_card",
+    "label_for_events",
 ]

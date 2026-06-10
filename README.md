@@ -51,6 +51,164 @@ of them deliberately stays untouched.
 
 ---
 
+## 0. Project evolution & demo guide (P0 &rarr; P4.5)
+
+This product layer grew in deliberate, test-gated stages. Each stage is
+additive: it never broke the previous frontend contract and never silently
+changed the P0 ranking maths.
+
+| Stage | Theme | What landed | Key modules |
+| --- | --- | --- | --- |
+| **P0** | Ranking semantics | Cleaned the scoring formula so `content_weight` genuinely blends content vs. retrieval; split **`final_score`** (standalone per-song relevance, shown to the user) from **`rank_score`** (the MMR objective that decides list position). | `pipeline/ranking.py`, `pipeline/scoring.py`, `pipeline/reranking.py` |
+| **P1** | Modular pipeline | Refactored one monolithic recommender into independently testable stages (profile &rarr; retrieval &rarr; filter &rarr; enrich &rarr; rank &rarr; rerank &rarr; explain &rarr; trace). `netease_pipeline.py` became a thin backward-compatible facade. | `pipeline/` package, `pipeline/recommender.py` |
+| **P2** | Embedding recall | Added a durable local `SongFeatureStore` + an **additive** TF-IDF/SVD embedding recall channel. Songs found by both NetEase search and embedding recall merge by `song_id`, naturally raising `multi_source_agreement`. Never replaces search, never touches P0 ranking. | `pipeline/feature_store.py`, `pipeline/embedding.py`, `pipeline/embedding_retrieval.py` |
+| **P3** | Feedback logging + offline eval | Fire-and-forget SQLite `FeedbackStore` logging every exposure (request + each card) and any user feedback; `/api/feedback` endpoint; diagnostic offline evaluation harness over fixed seed profiles. | `pipeline/feedback.py`, `evaluation/` package |
+| **P4** | Shadow learned ranker | A lightweight, explainable learned ranker (LogisticRegression) trained offline on the P3 feedback logs. Runs in **shadow mode** only: it emits a `learned_score` for analysis but **never reorders** the rule output. | `learning/` package |
+| **P4.5** | Docs & demo readiness | This guide, the architecture diagram, fixed demo profiles, a sample evaluation report, and honest limitations / future work. | `README.md`, `demo/`, `evaluation/sample_eval_report.json` |
+
+### Architecture diagram
+
+```mermaid
+flowchart TD
+    U["User input<br/>(liked songs / artists / genres / moods / tags + sliders)"]
+    U --> PB["ProfileBuilder<br/>(normalise &rarr; UserProfile)"]
+
+    PB --> R1["NetEase Retriever<br/>(artist / tag / title / discovery search)"]
+    PB --> R2["Embedding Retriever<br/>(local SongFeatureStore, TF-IDF+SVD)"]
+
+    R1 --> MERGE{{"Merge candidates by song_id<br/>(combines source hits)"}}
+    R2 --> MERGE
+
+    MERGE --> CF["CandidateFilter<br/>(dedupe / liked / tag-title / trust)"]
+    CF --> FE["FeatureEnricher<br/>(NetEase deep enrichment + cache)"]
+    FE --> RK["Ranker (P0)<br/>content / retrieval / quality blend"]
+    RK --> RR["Reranker (MMR)<br/>final_score vs rank_score"]
+    RR --> EX["Explainer<br/>reasons / pick_type / explanation"]
+
+    EX --> SH["Shadow Learned Ranker (P4)<br/>adds learned_score, never reorders"]
+    SH --> RESP["Response<br/>(cards + score_breakdown + trace)"]
+
+    RESP --> FS[("FeedbackStore (P3)<br/>exposures + /api/feedback")]
+    FS --> EVAL["Offline Evaluation (P3/P4)<br/>diagnostic + learned-shadow metrics"]
+    FS --> TRAIN["train_ranker (P4)<br/>builds the shadow model"]
+    TRAIN -.-> SH
+    EVAL -.-> SH
+
+    %% The local catalogue grows on every run and feeds embedding recall.
+    FE -.->|upsert seen songs| STORE[("SongFeatureStore (P2)")]
+    STORE -.-> R2
+
+    classDef shadow fill:#2b2b3a,stroke:#888,color:#eee;
+    class SH,EVAL,TRAIN shadow;
+```
+
+### Demo commands
+
+All commands run from the **project root** (`SeniorProj/`).
+
+```powershell
+# 1) Install the demo deps (flask + sklearn/joblib/numpy for P2/P4).
+pip install -r SongRecDemo/requirements.txt
+
+# 2) Start the app (product layer only; skips the heavy KGRec load).
+python SongRecDemo/app.py --no-kgrec
+#    -> open http://127.0.0.1:5173
+
+# 3) Run the hermetic smoke tests (no network; 47 checks across P0-P4).
+python SongRecDemo/smoke_test.py
+
+# 4) Run the offline evaluation harness (deterministic, no network).
+python -m SongRecDemo.evaluation.run_eval --offline --k 10 --out report.json
+
+# 5) Train the shadow learned ranker from the feedback logs.
+#    Fail-soft: prints a reason and exits 0 if there isn't enough data yet.
+python -m SongRecDemo.learning.train_ranker
+#    -> writes data/learned_ranker.joblib + data/learned_ranker_schema.json
+
+# 6) Shadow mode is ON by default. Once a model exists, every /api/recommend
+#    response carries learned_score per card and learned_ranker_loaded=true in
+#    the trace. To toggle it explicitly:
+$env:LEARNED_RANKER_SHADOW_MODE = "0"   # off
+$env:LEARNED_RANKER_SHADOW_MODE = "1"   # on (default)
+```
+
+> Shadow mode is observe-only by design. `LEARNED_RANKER_ENABLED` exists for a
+> future controlled rollout but in this version the learned score **never**
+> drives the order.
+
+### Demo scenarios
+
+Three fixed, ready-to-POST profiles live in [`demo/`](demo/) with a guide to
+exactly which `trace` and `score_breakdown` fields to watch:
+
+- [`demo/content_heavy.json`](demo/content_heavy.json) &mdash; high
+  `content_weight`; watch `content_score`, `artist_match`, small `novelty_bonus`,
+  mostly `safe` picks.
+- [`demo/discovery_high_novelty.json`](demo/discovery_high_novelty.json) &mdash;
+  high `novelty`/`diversity`; watch `novelty_score`, `relevance_gate`, more
+  `exploratory`/`diverse` picks.
+- [`demo/embedding_recall.json`](demo/embedding_recall.json) &mdash; taste-only
+  profile; watch `trace.num_embedding_candidates`, `trace.embedding_index_ready`,
+  and `"embedding"` in `items[*].source_types`.
+
+See [`demo/README.md`](demo/README.md) for the per-scenario observation points.
+
+### Offline evaluation report sample
+
+[`evaluation/sample_eval_report.json`](evaluation/sample_eval_report.json) is a
+saved, representative run of the harness. It shows the full diagnostic metric
+shape per profile plus the aggregate:
+
+- `coverage` (unique artists / albums / source types)
+- `diversity` (mean pairwise dissimilarity)
+- `novelty` (mean `novelty_score`, mean inverse popularity)
+- `source_mix` (share of each retrieval channel)
+- `embedding_share` (fraction of cards from the local embedding channel)
+- `duplicate_rate` (artist / title / album repetition)
+- `latency_ms`
+- `learned_shadow` (when a shadow model is attached): `learned_score_distribution`,
+  `rank_correlation_between_rule_and_learned`,
+  `top_k_overlap_between_rule_and_learned`, and `cases_where_model_disagrees`.
+
+It is **diagnostic, not accuracy**: there are no human relevance labels yet, so
+the harness never reports Precision / Recall / NDCG. The `learned_shadow` block
+appears only when a model produced `learned_score`s; otherwise it is cleanly
+skipped.
+
+### System limitations (honest)
+
+- **No real large-scale user-item matrix.** The product layer has no NetEase
+  listen/like/skip history. `multi_source_agreement` is a *retrieval-consensus*
+  signal, **not** trained collaborative filtering.
+- **The learned ranker is shadow-only.** It computes `learned_score` for
+  analysis and does not control the live ordering in this version.
+- **Feedback labels are weak supervision.** Labels are derived by rule from a
+  few explicit UI events (like / click / impression-only / dislike), not from
+  complete, real listening behaviour. Impression-only rows are low-weight weak
+  negatives, not confirmed dislikes.
+- **Embedding recall depends on a local catalogue.** The store grows on every
+  run, so early on (small catalogue) the embedding channel contributes little
+  or nothing; it gets more useful as more songs are seen.
+- **NetEase `/search` is still the primary real-song source.** When it is
+  unreachable and a query is uncached, that query returns nothing rather than
+  inventing songs.
+
+### Future work
+
+- Collect more real user feedback through `/api/feedback` to grow the training
+  set beyond weak, sparse labels.
+- Add a `manual_labels.json` of human relevance judgements to unlock honest
+  accuracy metrics (Precision@K / NDCG@K / MRR) alongside the diagnostics.
+- Graduate the learned ranker from shadow mode to a **controlled, blended**
+  ranking (e.g. `final = (1 - alpha) * rule + alpha * learned`) with `alpha`
+  ramped up carefully and A/B-guarded.
+- Replace the local TF-IDF/SVD embedder with sentence-transformers embeddings
+  and a FAISS index for larger, higher-quality recall.
+- If enough genuine interaction data accumulates, explore a Two-Tower retrieval
+  model trained on real user-item signals.
+
+---
+
 ## 1. What this demo does (and doesn't) change
 
 The following research-layer artefacts are completely untouched:
@@ -577,7 +735,14 @@ for the queries it exercises, and constructs the Flask app with
 `load_kgrec=False` so it does not depend on trained artefacts being
 present.
 
-Checks:
+It now runs **47 checks** spanning every stage: the original P0/P1 API +
+ranking checks (1&ndash;16), the P2 feature-store + embedding-recall checks
+(17&ndash;27), the P3 feedback-logging + offline-eval checks (28&ndash;37),
+and the P4 shadow-learned-ranker checks (38&ndash;47: dataset builder, weak
+label rules, fail-soft training, `LearnedRanker` fit/predict/save/load,
+shadow mode with and without a model, the invariant that `learned_score`
+never changes the rule order, eval skipping/reporting learned metrics, and
+`FeedbackStore` health). The original P0/P1 checks are:
 
 1. `GET /api/health` &mdash; product layer up, NetEase reported alive.
 2. `GET /api/song-search?q=...` &mdash; returns NetEase-shaped real-song

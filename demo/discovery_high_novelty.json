@@ -1,0 +1,13 @@
+{
+  "_demo_id": "discovery_high_novelty",
+  "_label": "Discovery / high-novelty recommendation",
+  "liked_songs": [],
+  "liked_artists": ["Radiohead"],
+  "genres": ["experimental", "art rock"],
+  "moods": ["adventurous"],
+  "tags": ["discovery"],
+  "content_weight": 0.4,
+  "novelty": 0.9,
+  "diversity": 0.6,
+  "k": 10
+}

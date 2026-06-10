@@ -1,0 +1,11 @@
+{
+  "version": "p3-manual-labels-v0",
+  "note": "Placeholder for future human relevance labels. When populated, run_eval can additionally compute Precision@K / NDCG@K / MRR / average relevance. label: 0 = bad, 1 = acceptable, 2 = strong recommendation.",
+  "schema": {
+    "profile_id": "string (matches seed_profiles.json profile_id)",
+    "song_id": "int (NetEase song id)",
+    "label": "0 | 1 | 2",
+    "notes": "free text: bad / acceptable / strong recommendation"
+  },
+  "labels": []
+}

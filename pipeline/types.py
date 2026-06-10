@@ -93,6 +93,11 @@ class RealSongCard:
     # frontend show how a recommendation was found without breaking the
     # existing `sources` (labelled per-query names) contract.
     source_types: list[str] = field(default_factory=list)
+    # P4 shadow ranking: the learned ranker's position for this card (1-indexed
+    # by descending learned_score). Additive + optional -- only set when a
+    # shadow model is active. The displayed order is still the rule order, so
+    # this never changes ranking; it only lets us observe the model's view.
+    learned_rank_position: Optional[int] = None
 
     def to_dict(self) -> dict[str, Any]:
         d = self.track.to_card_dict()
@@ -107,6 +112,8 @@ class RealSongCard:
             "source_types":     list(self.source_types),
             "pick_type":        self.pick_type,
         })
+        if self.learned_rank_position is not None:
+            d["learned_rank_position"] = int(self.learned_rank_position)
         return d
 
 

@@ -1,0 +1,22 @@
+{
+  "_demo_id": "content_heavy",
+  "_label": "Content-heavy recommendation (stay close to my taste)",
+  "liked_songs": [
+    {
+      "netease_song_id": 12345,
+      "title": "Holocene",
+      "artist": "Bon Iver",
+      "artists": ["Bon Iver"],
+      "album": "Bon Iver, Bon Iver",
+      "cover_url": ""
+    }
+  ],
+  "liked_artists": ["Bon Iver", "Phoebe Bridgers", "Sufjan Stevens"],
+  "genres": ["indie folk", "folk"],
+  "moods": ["mellow", "sad"],
+  "tags": ["acoustic"],
+  "content_weight": 0.85,
+  "novelty": 0.1,
+  "diversity": 0.15,
+  "k": 10
+}

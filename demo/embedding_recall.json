@@ -1,0 +1,13 @@
+{
+  "_demo_id": "embedding_recall",
+  "_label": "Embedding-recall demonstration (local catalogue second channel)",
+  "liked_songs": [],
+  "liked_artists": [],
+  "genres": ["indie folk"],
+  "moods": ["mellow"],
+  "tags": ["acoustic guitar"],
+  "content_weight": 0.5,
+  "novelty": 0.3,
+  "diversity": 0.3,
+  "k": 10
+}

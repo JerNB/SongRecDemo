@@ -23,6 +23,7 @@ from .embedding_retrieval import EmbeddingRetriever
 from .enrichment import FeatureEnricher
 from .explain import Explainer
 from .feature_store import SongFeatureStore
+from .feedback import FeedbackStore
 from .filtering import CandidateFilter
 from .profile import ProfileBuilder
 from .ranking import Ranker
@@ -73,6 +74,11 @@ class NeteaseRecommender:
         per_artist_cap: int = 2,
         feature_store: Optional[SongFeatureStore] = None,
         embedding_recall_enabled: Optional[bool] = None,
+        feedback_store: Optional[FeedbackStore] = None,
+        feedback_logging_enabled: Optional[bool] = None,
+        learned_ranker: Optional[Any] = None,
+        learned_ranker_shadow_mode: Optional[bool] = None,
+        learned_ranker_model_path: Optional[Any] = None,
     ) -> None:
         self._client = client
         self._cache = cache
@@ -149,6 +155,58 @@ class NeteaseRecommender:
                 log.warning("embedding retriever init failed (%s); channel off.", exc)
                 self._embedding_retriever = None
 
+        # --- P3: feedback logging (exposure + interaction). ------------
+        # Like the feature store, this is constructed defensively and is
+        # strictly fire-and-forget: any failure disables logging instead of
+        # breaking recommendations. It never touches the P0 scoring path.
+        self._feedback_logging_enabled = bool(
+            config.FEEDBACK_LOGGING_ENABLED
+            if feedback_logging_enabled is None
+            else feedback_logging_enabled
+        )
+        self._feedback_store: Optional[FeedbackStore]
+        if not self._feedback_logging_enabled:
+            self._feedback_store = feedback_store
+        else:
+            try:
+                self._feedback_store = (
+                    feedback_store if feedback_store is not None
+                    else FeedbackStore(config.FEEDBACK_STORE_PATH)
+                )
+            except Exception as exc:  # noqa: BLE001
+                log.warning("feedback_store init failed (%s); logging off.", exc)
+                self._feedback_store = None
+                self._feedback_logging_enabled = False
+
+        # --- P4: shadow learned ranker. --------------------------------
+        # Loaded defensively. When shadow mode is on AND a trained model is
+        # available, the recommender computes a learned_score per card for
+        # analysis -- it NEVER reorders the rule output. Any failure leaves
+        # the channel off rather than breaking the recommendation path.
+        self._learned_ranker_shadow_mode = bool(
+            config.LEARNED_RANKER_SHADOW_MODE
+            if learned_ranker_shadow_mode is None
+            else learned_ranker_shadow_mode
+        )
+        self._learned_ranker: Optional[Any] = None
+        if learned_ranker is not None:
+            self._learned_ranker = learned_ranker
+        elif self._learned_ranker_shadow_mode:
+            model_path = (
+                learned_ranker_model_path
+                if learned_ranker_model_path is not None
+                else config.LEARNED_RANKER_MODEL_PATH
+            )
+            try:
+                from pathlib import Path as _Path
+                if _Path(model_path).exists():
+                    from SongRecDemo.learning.ranker import LearnedRanker
+                    self._learned_ranker = LearnedRanker.load(model_path)
+                    log.info("learned ranker (shadow) loaded from %s", model_path)
+            except Exception as exc:  # noqa: BLE001
+                log.warning("learned ranker load failed (%s); shadow off.", exc)
+                self._learned_ranker = None
+
     # ------------------------------------------------------------------
     # Public API
     # ------------------------------------------------------------------
@@ -173,6 +231,7 @@ class NeteaseRecommender:
                 latency_ms=(time.perf_counter() - t_start) * 1000.0,
                 stage_latencies={},
             )
+            self._log_exposure(request_id, profile, req, trace, [])
             log.info(trace.log_line())
             return RealSongResponse(
                 request_id=request_id,
@@ -252,6 +311,13 @@ class NeteaseRecommender:
         cards = self._explainer.build_cards(ranked, profile)
         stage_latencies["explain"] = (time.perf_counter() - t) * 1000.0
 
+        # Stage 7b (P4): optional shadow learned scoring. Computes a
+        # learned_score per card for analysis only -- the rule order above
+        # is never changed.
+        t = time.perf_counter()
+        num_learned_scored = self._apply_shadow_scoring(cards, req)
+        stage_latencies["shadow_scoring"] = (time.perf_counter() - t) * 1000.0
+
         summary = {
             "artist":                     int(retrieval_stats["artist"]),
             "tag":                        int(retrieval_stats["tag"]),
@@ -283,7 +349,12 @@ class NeteaseRecommender:
             stage_latencies=stage_latencies,
             embed_stats=embed_stats,
             feature_store_upserts=feature_store_upserts,
+            num_learned_scored=num_learned_scored,
         )
+
+        # Stage 9 (P3): log this exposure (request + items) and stamp the
+        # feedback flags onto the trace before serialising it.
+        self._log_exposure(request_id, profile, req, trace, cards)
         log.info(trace.log_line())
 
         return RealSongResponse(
@@ -342,6 +413,131 @@ class NeteaseRecommender:
             return 0
 
     # ------------------------------------------------------------------
+    # P4: shadow learned scoring
+    # ------------------------------------------------------------------
+
+    @property
+    def learned_ranker(self) -> Optional[Any]:
+        """The loaded shadow learned ranker (or None)."""
+        return self._learned_ranker
+
+    def _apply_shadow_scoring(self, cards: list, req: RealSongRequest) -> int:
+        """Attach a learned_score to each card without changing the order.
+
+        Returns the number of cards scored. Fire-and-forget: any failure is
+        swallowed (the learned score is purely observational) and the rule
+        ordering / final_score / rank_score are untouched.
+        """
+        if not self._learned_ranker_shadow_mode or self._learned_ranker is None:
+            return 0
+        if not cards:
+            return 0
+        try:
+            from SongRecDemo.learning.dataset import feature_dict_from_card
+
+            scores: list[float] = []
+            for card in cards:
+                feats = feature_dict_from_card(card, req)
+                ls = float(self._learned_ranker.predict_score(feats))
+                # Additive only: a new entry in the score_breakdown dict. We
+                # deliberately do NOT touch final_score / rank_score.
+                card.score_breakdown["learned_score"] = ls
+                scores.append(ls)
+
+            # learned_rank_position: 1-indexed by descending learned_score,
+            # ties broken by the existing rule rank for stability. This is
+            # metadata only; the displayed order stays the rule order.
+            order = sorted(
+                range(len(cards)),
+                key=lambda i: (-scores[i], int(getattr(cards[i], "rank", i + 1))),
+            )
+            for pos, idx in enumerate(order, start=1):
+                cards[idx].learned_rank_position = pos
+            return len(cards)
+        except Exception as exc:  # noqa: BLE001 -- shadow scoring must never break recall
+            log.warning("shadow learned scoring failed (%s); continuing.", exc)
+            return 0
+
+    # ------------------------------------------------------------------
+    # P3: feedback exposure logging
+    # ------------------------------------------------------------------
+
+    @property
+    def feedback_store(self) -> Optional[FeedbackStore]:
+        """The feedback store (if logging is enabled) so the API layer can
+        record user_feedback events against the same backing store."""
+        return self._feedback_store if self._feedback_logging_enabled else None
+
+    def _log_exposure(
+        self,
+        request_id: str,
+        profile: UserProfile,
+        req: RealSongRequest,
+        trace: RecommendationTrace,
+        cards: list,
+    ) -> None:
+        """Log the recommendation_request + one recommendation_item per card.
+
+        Fire-and-forget: any failure is swallowed and merely leaves the
+        trace's feedback flags False, never touching the response.
+        """
+        if not self._feedback_logging_enabled or self._feedback_store is None:
+            return
+        try:
+            request_payload = {
+                "request_id": request_id,
+                "profile_summary": dict(trace.profile_summary),
+                "liked_song_ids": sorted(profile.liked_track_ids),
+                "liked_artists": list(profile.liked_artists_display),
+                "genres": list(profile.preferred_genres),
+                "moods": list(profile.preferred_moods),
+                "tags": list(profile.preferred_tags),
+                "excluded_song_ids": sorted(profile.excluded_track_ids),
+                "content_weight": _clip01(req.content_weight),
+                "novelty": _clip01(req.novelty),
+                "diversity": _clip01(req.diversity),
+                "k": int(req.k),
+                "num_raw_candidates": int(trace.num_raw_candidates),
+                "num_filtered_candidates": int(trace.num_filtered_candidates),
+                "num_enriched_candidates": int(trace.num_enriched_candidates),
+                "num_final_candidates": int(trace.num_final_candidates),
+                "embedding_recall_enabled": bool(trace.embedding_recall_enabled),
+                "num_embedding_candidates": int(trace.num_embedding_candidates),
+                "latency_ms": float(trace.latency_ms),
+                "model_version": str(config.PIPELINE_VERSION),
+                "ranking_config_version": str(config.RANKING_CONFIG_VERSION),
+            }
+            trace.feedback_request_logged = bool(
+                self._feedback_store.log_request(request_payload)
+            )
+
+            item_rows = []
+            for card in cards:
+                bd = card.score_breakdown or {}
+                item_rows.append({
+                    "song_id": int(card.track.netease_song_id),
+                    "rank_position": int(card.rank),
+                    "final_score": bd.get("final_score"),
+                    "rank_score": bd.get("rank_score"),
+                    "content_score": bd.get("content_score"),
+                    "retrieval_score": bd.get("retrieval_score"),
+                    "multi_source_agreement": bd.get("multi_source_agreement"),
+                    "quality_score": bd.get("quality_score"),
+                    "novelty_score": bd.get("novelty_score"),
+                    "source_types": list(card.source_types),
+                    "reasons": list(card.reasons),
+                    "pick_type": card.pick_type,
+                    # Returning a card to the client counts as an exposure;
+                    # a future viewport tracker can refine this.
+                    "was_impressed": True,
+                })
+            trace.feedback_items_logged = int(
+                self._feedback_store.log_items(request_id, item_rows)
+            )
+        except Exception as exc:  # noqa: BLE001 -- logging must never break recall
+            log.warning("feedback exposure logging failed (%s); continuing.", exc)
+
+    # ------------------------------------------------------------------
     # Trace + echo helpers
     # ------------------------------------------------------------------
 
@@ -359,8 +555,15 @@ class NeteaseRecommender:
         stage_latencies: dict[str, float],
         embed_stats: Optional[dict[str, Any]] = None,
         feature_store_upserts: int = 0,
+        num_learned_scored: int = 0,
     ) -> RecommendationTrace:
         embed_stats = embed_stats or {}
+        feedback_healthy = True
+        if self._feedback_store is not None:
+            try:
+                feedback_healthy = bool(self._feedback_store.get_health()["healthy"])
+            except Exception:  # noqa: BLE001
+                feedback_healthy = True
         return RecommendationTrace(
             request_id=request_id,
             profile_summary={
@@ -390,6 +593,13 @@ class NeteaseRecommender:
             embedding_index_ready=bool(embed_stats.get("embedding_index_ready", False)),
             embedding_latency_ms=float(embed_stats.get("embedding_latency_ms", 0.0)),
             feature_store_upserts=int(feature_store_upserts),
+            feedback_logging_enabled=bool(self._feedback_logging_enabled),
+            feedback_store_healthy=bool(feedback_healthy),
+            model_version=str(config.PIPELINE_VERSION),
+            ranking_config_version=str(config.RANKING_CONFIG_VERSION),
+            learned_ranker_shadow_enabled=bool(self._learned_ranker_shadow_mode),
+            learned_ranker_loaded=bool(self._learned_ranker is not None),
+            num_learned_scored=int(num_learned_scored),
         )
 
     def _control_echo(self, req: RealSongRequest) -> dict[str, Any]:
@@ -427,10 +637,22 @@ class NeteaseRecommender:
             "candidate_enrichment_used":    True,
             "ranking_weights_version":      "v1",
             "ranking_weights":              _W,
+            "pipeline_version":             config.PIPELINE_VERSION,
+            "ranking_config_version":       config.RANKING_CONFIG_VERSION,
+            "feedback_logging_enabled":     bool(self._feedback_logging_enabled),
+            "learned_ranker": {
+                "shadow_mode":  bool(self._learned_ranker_shadow_mode),
+                "loaded":       bool(self._learned_ranker is not None),
+                "drives_ranking": False,  # P4: shadow only, never reorders
+                "note": (
+                    "Shadow learned ranker emits learned_score for analysis "
+                    "only; the P0 rule ranker still decides the order."
+                ),
+            },
             "pipeline_stages": [
                 "profile", "retrieval", "embedding_recall", "filtering",
                 "enrichment", "feature_store_upsert", "ranking", "reranking",
-                "explanation", "trace",
+                "explanation", "shadow_scoring", "trace",
             ],
             "embedding_recall": {
                 "enabled":           bool(self._embedding_recall_enabled),

@@ -35,6 +35,17 @@ class RecommendationTrace:
     embedding_index_ready: bool = False
     embedding_latency_ms: float = 0.0
     feature_store_upserts: int = 0
+    # --- P3: feedback logging + version stamps (all additive). ------------
+    feedback_logging_enabled: bool = False
+    feedback_request_logged: bool = False
+    feedback_items_logged: int = 0
+    feedback_store_healthy: bool = True
+    model_version: str = ""
+    ranking_config_version: str = ""
+    # --- P4: shadow learned ranker observability (all additive). ----------
+    learned_ranker_shadow_enabled: bool = False
+    learned_ranker_loaded: bool = False
+    num_learned_scored: int = 0
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -56,6 +67,15 @@ class RecommendationTrace:
             "embedding_index_ready":   bool(self.embedding_index_ready),
             "embedding_latency_ms":    round(float(self.embedding_latency_ms), 2),
             "feature_store_upserts":   int(self.feature_store_upserts),
+            "feedback_logging_enabled": bool(self.feedback_logging_enabled),
+            "feedback_request_logged": bool(self.feedback_request_logged),
+            "feedback_items_logged":   int(self.feedback_items_logged),
+            "feedback_store_healthy":  bool(self.feedback_store_healthy),
+            "model_version":           str(self.model_version),
+            "ranking_config_version":  str(self.ranking_config_version),
+            "learned_ranker_shadow_enabled": bool(self.learned_ranker_shadow_enabled),
+            "learned_ranker_loaded":   bool(self.learned_ranker_loaded),
+            "num_learned_scored":      int(self.num_learned_scored),
         }
 
     def log_line(self) -> str:

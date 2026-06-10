@@ -1,0 +1,999 @@
+{
+  "report_type": "diagnostic",
+  "note": "Diagnostic metrics only (no human relevance labels). Not accuracy metrics; no Precision/Recall/NDCG. | SAMPLE report generated offline with a warmed feature store and a shadow LearnedRanker attached, to illustrate the full metric shape (coverage / diversity / novelty / source_mix / embedding_share / duplicate_rate / latency / learned_shadow).",
+  "pipeline_version": "p3-feedback-eval",
+  "ranking_config_version": "ranking_weights_v1",
+  "k": 10,
+  "num_profiles": 12,
+  "elapsed_ms": 130.81,
+  "profiles": [
+    {
+      "profile_id": "indie_rock_01",
+      "label": "indie rock user",
+      "request_id": "eval:indie_rock_01",
+      "num_items": 8,
+      "fallback_used": null,
+      "metrics": {
+        "k": 10,
+        "num_items": 8,
+        "coverage": {
+          "unique_artists": 1.0,
+          "unique_albums": 1.0,
+          "unique_source_types": 8.0,
+          "n": 8.0
+        },
+        "diversity": 0.8821,
+        "novelty": {
+          "mean_novelty_score": 0.6648,
+          "mean_inverse_popularity": 0.3384
+        },
+        "source_mix": {
+          "artist": 0.1364,
+          "artist_context": 0.1364,
+          "discovery": 0.1364,
+          "embedding": 0.0455,
+          "genre": 0.1364,
+          "genre_mood": 0.1364,
+          "mood": 0.1364,
+          "tag": 0.1364
+        },
+        "embedding_share": 0.25,
+        "duplicate_rate": {
+          "artist": 0.0,
+          "title": 0.0,
+          "album": 0.0
+        },
+        "score_distribution": {
+          "final_score": {
+            "mean": 0.7136,
+            "var": 0.0114,
+            "min": 0.4955,
+            "max": 0.7913
+          },
+          "rank_score": {
+            "mean": 0.4136,
+            "var": 0.0042,
+            "min": 0.3149,
+            "max": 0.5539
+          }
+        },
+        "latency_ms": 21.42,
+        "trace_summary": {
+          "num_raw_candidates": 22,
+          "num_final_candidates": 8,
+          "embedding_recall_enabled": true,
+          "num_embedding_candidates": 16,
+          "model_version": "p3-feedback-eval",
+          "ranking_config_version": "ranking_weights_v1"
+        },
+        "learned_shadow": {
+          "num_scored": 8,
+          "learned_score_distribution": {
+            "mean": 0.7623,
+            "var": 0.1673,
+            "min": 0.0178,
+            "max": 0.9991
+          },
+          "rank_correlation_between_rule_and_learned": 0.9762,
+          "top_k_overlap_between_rule_and_learned": 1.0,
+          "num_cases_where_model_disagrees": 0,
+          "cases_where_model_disagrees": []
+        }
+      }
+    },
+    {
+      "profile_id": "pop_female_vocal_01",
+      "label": "pop female vocal user",
+      "request_id": "eval:pop_female_vocal_01",
+      "num_items": 9,
+      "fallback_used": null,
+      "metrics": {
+        "k": 10,
+        "num_items": 9,
+        "coverage": {
+          "unique_artists": 1.0,
+          "unique_albums": 1.0,
+          "unique_source_types": 8.0,
+          "n": 9.0
+        },
+        "diversity": 0.8875,
+        "novelty": {
+          "mean_novelty_score": 0.6933,
+          "mean_inverse_popularity": 0.3384
+        },
+        "source_mix": {
+          "artist": 0.1176,
+          "artist_context": 0.1176,
+          "discovery": 0.1176,
+          "embedding": 0.1765,
+          "genre": 0.1176,
+          "genre_mood": 0.1176,
+          "mood": 0.1176,
+          "tag": 0.1176
+        },
+        "embedding_share": 1.0,
+        "duplicate_rate": {
+          "artist": 0.0,
+          "title": 0.0,
+          "album": 0.0
+        },
+        "score_distribution": {
+          "final_score": {
+            "mean": 0.6737,
+            "var": 0.0183,
+            "min": 0.4309,
+            "max": 0.7891
+          },
+          "rank_score": {
+            "mean": 0.391,
+            "var": 0.0061,
+            "min": 0.2712,
+            "max": 0.5524
+          }
+        },
+        "latency_ms": 8.4,
+        "trace_summary": {
+          "num_raw_candidates": 24,
+          "num_final_candidates": 9,
+          "embedding_recall_enabled": true,
+          "num_embedding_candidates": 24,
+          "model_version": "p3-feedback-eval",
+          "ranking_config_version": "ranking_weights_v1"
+        },
+        "learned_shadow": {
+          "num_scored": 9,
+          "learned_score_distribution": {
+            "mean": 0.6804,
+            "var": 0.2027,
+            "min": 0.0132,
+            "max": 0.9996
+          },
+          "rank_correlation_between_rule_and_learned": 1.0,
+          "top_k_overlap_between_rule_and_learned": 1.0,
+          "num_cases_where_model_disagrees": 0,
+          "cases_where_model_disagrees": []
+        }
+      }
+    },
+    {
+      "profile_id": "rap_hiphop_01",
+      "label": "rap / hip-hop user",
+      "request_id": "eval:rap_hiphop_01",
+      "num_items": 9,
+      "fallback_used": null,
+      "metrics": {
+        "k": 10,
+        "num_items": 9,
+        "coverage": {
+          "unique_artists": 1.0,
+          "unique_albums": 1.0,
+          "unique_source_types": 8.0,
+          "n": 9.0
+        },
+        "diversity": 0.8944,
+        "novelty": {
+          "mean_novelty_score": 0.6889,
+          "mean_inverse_popularity": 0.3384
+        },
+        "source_mix": {
+          "artist": 0.1224,
+          "artist_context": 0.1224,
+          "discovery": 0.1224,
+          "embedding": 0.1429,
+          "genre": 0.1224,
+          "genre_mood": 0.1224,
+          "mood": 0.1224,
+          "tag": 0.1224
+        },
+        "embedding_share": 0.7778,
+        "duplicate_rate": {
+          "artist": 0.0,
+          "title": 0.0,
+          "album": 0.0
+        },
+        "score_distribution": {
+          "final_score": {
+            "mean": 0.72,
+            "var": 0.0179,
+            "min": 0.4951,
+            "max": 0.8197
+          },
+          "rank_score": {
+            "mean": 0.3241,
+            "var": 0.0042,
+            "min": 0.2539,
+            "max": 0.4918
+          }
+        },
+        "latency_ms": 10.47,
+        "trace_summary": {
+          "num_raw_candidates": 22,
+          "num_final_candidates": 9,
+          "embedding_recall_enabled": true,
+          "num_embedding_candidates": 20,
+          "model_version": "p3-feedback-eval",
+          "ranking_config_version": "ranking_weights_v1"
+        },
+        "learned_shadow": {
+          "num_scored": 9,
+          "learned_score_distribution": {
+            "mean": 0.6781,
+            "var": 0.2051,
+            "min": 0.0143,
+            "max": 0.999
+          },
+          "rank_correlation_between_rule_and_learned": 0.9833,
+          "top_k_overlap_between_rule_and_learned": 1.0,
+          "num_cases_where_model_disagrees": 0,
+          "cases_where_model_disagrees": []
+        }
+      }
+    },
+    {
+      "profile_id": "classical_piano_01",
+      "label": "classical / piano user",
+      "request_id": "eval:classical_piano_01",
+      "num_items": 6,
+      "fallback_used": null,
+      "metrics": {
+        "k": 10,
+        "num_items": 6,
+        "coverage": {
+          "unique_artists": 1.0,
+          "unique_albums": 1.0,
+          "unique_source_types": 6.0,
+          "n": 6.0
+        },
+        "diversity": 0.8,
+        "novelty": {
+          "mean_novelty_score": 0.6531,
+          "mean_inverse_popularity": 0.3384
+        },
+        "source_mix": {
+          "artist": 0.1667,
+          "artist_context": 0.1667,
+          "discovery": 0.1667,
+          "genre": 0.1667,
+          "genre_mood": 0.1667,
+          "mood": 0.1667
+        },
+        "embedding_share": 0.0,
+        "duplicate_rate": {
+          "artist": 0.0,
+          "title": 0.0,
+          "album": 0.0
+        },
+        "score_distribution": {
+          "final_score": {
+            "mean": 0.6792,
+            "var": 0.0001,
+            "min": 0.6693,
+            "max": 0.6955
+          },
+          "rank_score": {
+            "mean": 0.3738,
+            "var": 0.0026,
+            "min": 0.3467,
+            "max": 0.4869
+          }
+        },
+        "latency_ms": 5.02,
+        "trace_summary": {
+          "num_raw_candidates": 6,
+          "num_final_candidates": 6,
+          "embedding_recall_enabled": true,
+          "num_embedding_candidates": 0,
+          "model_version": "p3-feedback-eval",
+          "ranking_config_version": "ranking_weights_v1"
+        },
+        "learned_shadow": {
+          "num_scored": 6,
+          "learned_score_distribution": {
+            "mean": 0.9956,
+            "var": 0.0,
+            "min": 0.9931,
+            "max": 0.9979
+          },
+          "rank_correlation_between_rule_and_learned": 1.0,
+          "top_k_overlap_between_rule_and_learned": 1.0,
+          "num_cases_where_model_disagrees": 0,
+          "cases_where_model_disagrees": []
+        }
+      }
+    },
+    {
+      "profile_id": "electronic_chill_01",
+      "label": "electronic / chill user",
+      "request_id": "eval:electronic_chill_01",
+      "num_items": 8,
+      "fallback_used": null,
+      "metrics": {
+        "k": 10,
+        "num_items": 8,
+        "coverage": {
+          "unique_artists": 1.0,
+          "unique_albums": 1.0,
+          "unique_source_types": 8.0,
+          "n": 8.0
+        },
+        "diversity": 0.875,
+        "novelty": {
+          "mean_novelty_score": 0.6747,
+          "mean_inverse_popularity": 0.3384
+        },
+        "source_mix": {
+          "artist": 0.12,
+          "artist_context": 0.12,
+          "discovery": 0.12,
+          "embedding": 0.16,
+          "genre": 0.12,
+          "genre_mood": 0.12,
+          "mood": 0.12,
+          "tag": 0.12
+        },
+        "embedding_share": 1.0,
+        "duplicate_rate": {
+          "artist": 0.0,
+          "title": 0.0,
+          "album": 0.0
+        },
+        "score_distribution": {
+          "final_score": {
+            "mean": 0.7988,
+            "var": 0.0169,
+            "min": 0.5144,
+            "max": 0.8928
+          },
+          "rank_score": {
+            "mean": 0.367,
+            "var": 0.0049,
+            "min": 0.2701,
+            "max": 0.5357
+          }
+        },
+        "latency_ms": 7.2,
+        "trace_summary": {
+          "num_raw_candidates": 19,
+          "num_final_candidates": 8,
+          "embedding_recall_enabled": true,
+          "num_embedding_candidates": 19,
+          "model_version": "p3-feedback-eval",
+          "ranking_config_version": "ranking_weights_v1"
+        },
+        "learned_shadow": {
+          "num_scored": 8,
+          "learned_score_distribution": {
+            "mean": 0.7632,
+            "var": 0.1663,
+            "min": 0.0161,
+            "max": 0.9996
+          },
+          "rank_correlation_between_rule_and_learned": 0.9286,
+          "top_k_overlap_between_rule_and_learned": 1.0,
+          "num_cases_where_model_disagrees": 1,
+          "cases_where_model_disagrees": [
+            {
+              "netease_song_id": 2003,
+              "title": "Neon Drift",
+              "rule_position": 5,
+              "learned_position": 3,
+              "learned_score": 0.9981
+            }
+          ]
+        }
+      }
+    },
+    {
+      "profile_id": "chinese_pop_01",
+      "label": "Chinese pop user",
+      "request_id": "eval:chinese_pop_01",
+      "num_items": 9,
+      "fallback_used": null,
+      "metrics": {
+        "k": 10,
+        "num_items": 9,
+        "coverage": {
+          "unique_artists": 1.0,
+          "unique_albums": 1.0,
+          "unique_source_types": 8.0,
+          "n": 9.0
+        },
+        "diversity": 0.8875,
+        "novelty": {
+          "mean_novelty_score": 0.6914,
+          "mean_inverse_popularity": 0.3384
+        },
+        "source_mix": {
+          "artist": 0.1176,
+          "artist_context": 0.1176,
+          "discovery": 0.1176,
+          "embedding": 0.1765,
+          "genre": 0.1176,
+          "genre_mood": 0.1176,
+          "mood": 0.1176,
+          "tag": 0.1176
+        },
+        "embedding_share": 1.0,
+        "duplicate_rate": {
+          "artist": 0.0,
+          "title": 0.0,
+          "album": 0.0
+        },
+        "score_distribution": {
+          "final_score": {
+            "mean": 0.6863,
+            "var": 0.0186,
+            "min": 0.4563,
+            "max": 0.7976
+          },
+          "rank_score": {
+            "mean": 0.4032,
+            "var": 0.0057,
+            "min": 0.2914,
+            "max": 0.5583
+          }
+        },
+        "latency_ms": 9.13,
+        "trace_summary": {
+          "num_raw_candidates": 22,
+          "num_final_candidates": 9,
+          "embedding_recall_enabled": true,
+          "num_embedding_candidates": 22,
+          "model_version": "p3-feedback-eval",
+          "ranking_config_version": "ranking_weights_v1"
+        },
+        "learned_shadow": {
+          "num_scored": 9,
+          "learned_score_distribution": {
+            "mean": 0.6794,
+            "var": 0.2038,
+            "min": 0.0139,
+            "max": 0.9991
+          },
+          "rank_correlation_between_rule_and_learned": 0.9833,
+          "top_k_overlap_between_rule_and_learned": 1.0,
+          "num_cases_where_model_disagrees": 0,
+          "cases_where_model_disagrees": []
+        }
+      }
+    },
+    {
+      "profile_id": "japanese_city_pop_01",
+      "label": "Japanese city pop user",
+      "request_id": "eval:japanese_city_pop_01",
+      "num_items": 8,
+      "fallback_used": null,
+      "metrics": {
+        "k": 10,
+        "num_items": 8,
+        "coverage": {
+          "unique_artists": 1.0,
+          "unique_albums": 1.0,
+          "unique_source_types": 8.0,
+          "n": 8.0
+        },
+        "diversity": 0.875,
+        "novelty": {
+          "mean_novelty_score": 0.6802,
+          "mean_inverse_popularity": 0.3384
+        },
+        "source_mix": {
+          "artist": 0.12,
+          "artist_context": 0.12,
+          "discovery": 0.12,
+          "embedding": 0.16,
+          "genre": 0.12,
+          "genre_mood": 0.12,
+          "mood": 0.12,
+          "tag": 0.12
+        },
+        "embedding_share": 1.0,
+        "duplicate_rate": {
+          "artist": 0.0,
+          "title": 0.0,
+          "album": 0.0
+        },
+        "score_distribution": {
+          "final_score": {
+            "mean": 0.7959,
+            "var": 0.0144,
+            "min": 0.5379,
+            "max": 0.893
+          },
+          "rank_score": {
+            "mean": 0.3586,
+            "var": 0.0051,
+            "min": 0.2727,
+            "max": 0.5358
+          }
+        },
+        "latency_ms": 6.74,
+        "trace_summary": {
+          "num_raw_candidates": 19,
+          "num_final_candidates": 8,
+          "embedding_recall_enabled": true,
+          "num_embedding_candidates": 19,
+          "model_version": "p3-feedback-eval",
+          "ranking_config_version": "ranking_weights_v1"
+        },
+        "learned_shadow": {
+          "num_scored": 8,
+          "learned_score_distribution": {
+            "mean": 0.7638,
+            "var": 0.1656,
+            "min": 0.0172,
+            "max": 0.9995
+          },
+          "rank_correlation_between_rule_and_learned": 0.8333,
+          "top_k_overlap_between_rule_and_learned": 1.0,
+          "num_cases_where_model_disagrees": 3,
+          "cases_where_model_disagrees": [
+            {
+              "netease_song_id": 2006,
+              "title": "Glass Avenue",
+              "rule_position": 1,
+              "learned_position": 3,
+              "learned_score": 0.9986
+            },
+            {
+              "netease_song_id": 2005,
+              "title": "Marble Skies",
+              "rule_position": 4,
+              "learned_position": 6,
+              "learned_score": 0.9979
+            },
+            {
+              "netease_song_id": 2003,
+              "title": "Neon Drift",
+              "rule_position": 6,
+              "learned_position": 4,
+              "learned_score": 0.998
+            }
+          ]
+        }
+      }
+    },
+    {
+      "profile_id": "sad_acoustic_01",
+      "label": "sad acoustic user",
+      "request_id": "eval:sad_acoustic_01",
+      "num_items": 8,
+      "fallback_used": null,
+      "metrics": {
+        "k": 10,
+        "num_items": 8,
+        "coverage": {
+          "unique_artists": 1.0,
+          "unique_albums": 1.0,
+          "unique_source_types": 7.0,
+          "n": 8.0
+        },
+        "diversity": 0.8699,
+        "novelty": {
+          "mean_novelty_score": 0.6802,
+          "mean_inverse_popularity": 0.3384
+        },
+        "source_mix": {
+          "artist": 0.1364,
+          "artist_context": 0.1364,
+          "discovery": 0.1364,
+          "embedding": 0.1818,
+          "genre": 0.1364,
+          "genre_mood": 0.1364,
+          "mood": 0.1364
+        },
+        "embedding_share": 1.0,
+        "duplicate_rate": {
+          "artist": 0.0,
+          "title": 0.0,
+          "album": 0.0
+        },
+        "score_distribution": {
+          "final_score": {
+            "mean": 0.7276,
+            "var": 0.0109,
+            "min": 0.4903,
+            "max": 0.8126
+          },
+          "rank_score": {
+            "mean": 0.4179,
+            "var": 0.0047,
+            "min": 0.3047,
+            "max": 0.5688
+          }
+        },
+        "latency_ms": 6.18,
+        "trace_summary": {
+          "num_raw_candidates": 19,
+          "num_final_candidates": 8,
+          "embedding_recall_enabled": true,
+          "num_embedding_candidates": 19,
+          "model_version": "p3-feedback-eval",
+          "ranking_config_version": "ranking_weights_v1"
+        },
+        "learned_shadow": {
+          "num_scored": 8,
+          "learned_score_distribution": {
+            "mean": 0.7631,
+            "var": 0.1638,
+            "min": 0.0169,
+            "max": 0.998
+          },
+          "rank_correlation_between_rule_and_learned": 0.9286,
+          "top_k_overlap_between_rule_and_learned": 1.0,
+          "num_cases_where_model_disagrees": 1,
+          "cases_where_model_disagrees": [
+            {
+              "netease_song_id": 2003,
+              "title": "Neon Drift",
+              "rule_position": 5,
+              "learned_position": 3,
+              "learned_score": 0.9961
+            }
+          ]
+        }
+      }
+    },
+    {
+      "profile_id": "high_novelty_discovery_01",
+      "label": "high novelty discovery user",
+      "request_id": "eval:high_novelty_discovery_01",
+      "num_items": 9,
+      "fallback_used": null,
+      "metrics": {
+        "k": 10,
+        "num_items": 9,
+        "coverage": {
+          "unique_artists": 1.0,
+          "unique_albums": 1.0,
+          "unique_source_types": 8.0,
+          "n": 9.0
+        },
+        "diversity": 0.8875,
+        "novelty": {
+          "mean_novelty_score": 0.7035,
+          "mean_inverse_popularity": 0.3384
+        },
+        "source_mix": {
+          "artist": 0.1176,
+          "artist_context": 0.1176,
+          "discovery": 0.1176,
+          "embedding": 0.1765,
+          "genre": 0.1176,
+          "genre_mood": 0.1176,
+          "mood": 0.1176,
+          "tag": 0.1176
+        },
+        "embedding_share": 1.0,
+        "duplicate_rate": {
+          "artist": 0.0,
+          "title": 0.0,
+          "album": 0.0
+        },
+        "score_distribution": {
+          "final_score": {
+            "mean": 0.9243,
+            "var": 0.0116,
+            "min": 0.7527,
+            "max": 1.0
+          },
+          "rank_score": {
+            "mean": 0.2227,
+            "var": 0.0055,
+            "min": 0.1663,
+            "max": 0.4
+          }
+        },
+        "latency_ms": 6.18,
+        "trace_summary": {
+          "num_raw_candidates": 28,
+          "num_final_candidates": 9,
+          "embedding_recall_enabled": true,
+          "num_embedding_candidates": 28,
+          "model_version": "p3-feedback-eval",
+          "ranking_config_version": "ranking_weights_v1"
+        },
+        "learned_shadow": {
+          "num_scored": 9,
+          "learned_score_distribution": {
+            "mean": 0.6771,
+            "var": 0.2061,
+            "min": 0.0285,
+            "max": 0.999
+          },
+          "rank_correlation_between_rule_and_learned": -0.3167,
+          "top_k_overlap_between_rule_and_learned": 1.0,
+          "num_cases_where_model_disagrees": 7,
+          "cases_where_model_disagrees": [
+            {
+              "netease_song_id": 940004,
+              "title": "Bright Vocal 4",
+              "rule_position": 2,
+              "learned_position": 7,
+              "learned_score": 0.0448
+            },
+            {
+              "netease_song_id": 950004,
+              "title": "Night Drive 4",
+              "rule_position": 3,
+              "learned_position": 8,
+              "learned_score": 0.0319
+            },
+            {
+              "netease_song_id": 960004,
+              "title": "Heavy Bars 4",
+              "rule_position": 4,
+              "learned_position": 9,
+              "learned_score": 0.0285
+            },
+            {
+              "netease_song_id": 2002,
+              "title": "Paper Boats",
+              "rule_position": 5,
+              "learned_position": 3,
+              "learned_score": 0.9983
+            },
+            {
+              "netease_song_id": 2003,
+              "title": "Neon Drift",
+              "rule_position": 6,
+              "learned_position": 4,
+              "learned_score": 0.9979
+            },
+            {
+              "netease_song_id": 2004,
+              "title": "Slow Burn",
+              "rule_position": 8,
+              "learned_position": 5,
+              "learned_score": 0.9974
+            },
+            {
+              "netease_song_id": 2001,
+              "title": "Quiet Light",
+              "rule_position": 9,
+              "learned_position": 1,
+              "learned_score": 0.999
+            }
+          ]
+        }
+      }
+    },
+    {
+      "profile_id": "low_novelty_safe_01",
+      "label": "low novelty safe recommendation user",
+      "request_id": "eval:low_novelty_safe_01",
+      "num_items": 9,
+      "fallback_used": null,
+      "metrics": {
+        "k": 10,
+        "num_items": 9,
+        "coverage": {
+          "unique_artists": 1.0,
+          "unique_albums": 1.0,
+          "unique_source_types": 7.0,
+          "n": 9.0
+        },
+        "diversity": 0.8857,
+        "novelty": {
+          "mean_novelty_score": 0.7083,
+          "mean_inverse_popularity": 0.3384
+        },
+        "source_mix": {
+          "artist": 0.1333,
+          "artist_context": 0.1333,
+          "discovery": 0.1333,
+          "embedding": 0.2,
+          "genre": 0.1333,
+          "genre_mood": 0.1333,
+          "mood": 0.1333
+        },
+        "embedding_share": 1.0,
+        "duplicate_rate": {
+          "artist": 0.0,
+          "title": 0.0,
+          "album": 0.0
+        },
+        "score_distribution": {
+          "final_score": {
+            "mean": 0.5137,
+            "var": 0.0123,
+            "min": 0.3389,
+            "max": 0.6384
+          },
+          "rank_score": {
+            "mean": 0.4365,
+            "var": 0.0085,
+            "min": 0.2958,
+            "max": 0.5745
+          }
+        },
+        "latency_ms": 6.92,
+        "trace_summary": {
+          "num_raw_candidates": 28,
+          "num_final_candidates": 9,
+          "embedding_recall_enabled": true,
+          "num_embedding_candidates": 28,
+          "model_version": "p3-feedback-eval",
+          "ranking_config_version": "ranking_weights_v1"
+        },
+        "learned_shadow": {
+          "num_scored": 9,
+          "learned_score_distribution": {
+            "mean": 0.6718,
+            "var": 0.21,
+            "min": 0.0124,
+            "max": 0.9979
+          },
+          "rank_correlation_between_rule_and_learned": 1.0,
+          "top_k_overlap_between_rule_and_learned": 1.0,
+          "num_cases_where_model_disagrees": 0,
+          "cases_where_model_disagrees": []
+        }
+      }
+    },
+    {
+      "profile_id": "rnb_soul_01",
+      "label": "r&b / soul user",
+      "request_id": "eval:rnb_soul_01",
+      "num_items": 9,
+      "fallback_used": null,
+      "metrics": {
+        "k": 10,
+        "num_items": 9,
+        "coverage": {
+          "unique_artists": 1.0,
+          "unique_albums": 1.0,
+          "unique_source_types": 8.0,
+          "n": 9.0
+        },
+        "diversity": 0.8875,
+        "novelty": {
+          "mean_novelty_score": 0.6919,
+          "mean_inverse_popularity": 0.3384
+        },
+        "source_mix": {
+          "artist": 0.1176,
+          "artist_context": 0.1176,
+          "discovery": 0.1176,
+          "embedding": 0.1765,
+          "genre": 0.1176,
+          "genre_mood": 0.1176,
+          "mood": 0.1176,
+          "tag": 0.1176
+        },
+        "embedding_share": 1.0,
+        "duplicate_rate": {
+          "artist": 0.0,
+          "title": 0.0,
+          "album": 0.0
+        },
+        "score_distribution": {
+          "final_score": {
+            "mean": 0.6871,
+            "var": 0.0196,
+            "min": 0.4527,
+            "max": 0.8008
+          },
+          "rank_score": {
+            "mean": 0.3558,
+            "var": 0.005,
+            "min": 0.262,
+            "max": 0.5205
+          }
+        },
+        "latency_ms": 25.02,
+        "trace_summary": {
+          "num_raw_candidates": 26,
+          "num_final_candidates": 9,
+          "embedding_recall_enabled": true,
+          "num_embedding_candidates": 26,
+          "model_version": "p3-feedback-eval",
+          "ranking_config_version": "ranking_weights_v1"
+        },
+        "learned_shadow": {
+          "num_scored": 9,
+          "learned_score_distribution": {
+            "mean": 0.6788,
+            "var": 0.2045,
+            "min": 0.0134,
+            "max": 0.9996
+          },
+          "rank_correlation_between_rule_and_learned": 0.9833,
+          "top_k_overlap_between_rule_and_learned": 1.0,
+          "num_cases_where_model_disagrees": 0,
+          "cases_where_model_disagrees": []
+        }
+      }
+    },
+    {
+      "profile_id": "metal_01",
+      "label": "metal user",
+      "request_id": "eval:metal_01",
+      "num_items": 9,
+      "fallback_used": null,
+      "metrics": {
+        "k": 10,
+        "num_items": 9,
+        "coverage": {
+          "unique_artists": 1.0,
+          "unique_albums": 1.0,
+          "unique_source_types": 8.0,
+          "n": 9.0
+        },
+        "diversity": 0.8944,
+        "novelty": {
+          "mean_novelty_score": 0.6887,
+          "mean_inverse_popularity": 0.3384
+        },
+        "source_mix": {
+          "artist": 0.1224,
+          "artist_context": 0.1224,
+          "discovery": 0.1224,
+          "embedding": 0.1429,
+          "genre": 0.1224,
+          "genre_mood": 0.1224,
+          "mood": 0.1224,
+          "tag": 0.1224
+        },
+        "embedding_share": 0.7778,
+        "duplicate_rate": {
+          "artist": 0.0,
+          "title": 0.0,
+          "album": 0.0
+        },
+        "score_distribution": {
+          "final_score": {
+            "mean": 0.7002,
+            "var": 0.0147,
+            "min": 0.48,
+            "max": 0.7932
+          },
+          "rank_score": {
+            "mean": 0.3112,
+            "var": 0.004,
+            "min": 0.2412,
+            "max": 0.4759
+          }
+        },
+        "latency_ms": 11.81,
+        "trace_summary": {
+          "num_raw_candidates": 20,
+          "num_final_candidates": 9,
+          "embedding_recall_enabled": true,
+          "num_embedding_candidates": 18,
+          "model_version": "p3-feedback-eval",
+          "ranking_config_version": "ranking_weights_v1"
+        },
+        "learned_shadow": {
+          "num_scored": 9,
+          "learned_score_distribution": {
+            "mean": 0.6813,
+            "var": 0.2011,
+            "min": 0.0141,
+            "max": 0.9996
+          },
+          "rank_correlation_between_rule_and_learned": 0.9833,
+          "top_k_overlap_between_rule_and_learned": 1.0,
+          "num_cases_where_model_disagrees": 0,
+          "cases_where_model_disagrees": []
+        }
+      }
+    }
+  ],
+  "aggregate": {
+    "num_profiles": 12,
+    "mean_diversity": 0.8772,
+    "mean_embedding_share": 0.8171,
+    "mean_novelty_score": 0.6849,
+    "mean_coverage_unique_artists": 1.0,
+    "mean_duplicate_artist_rate": 0.0,
+    "mean_final_score": 0.7184,
+    "mean_latency_ms": 10.3742,
+    "learned_shadow": {
+      "num_profiles_with_learned": 12,
+      "mean_rank_correlation": 0.8569,
+      "mean_top_k_overlap": 1.0,
+      "mean_num_disagreements": 1.0
+    }
+  }
+}

@@ -23,6 +23,7 @@ from .embedding_retrieval import EmbeddingRetriever
 from .enrichment import FeatureEnricher
 from .explain import Explainer
 from .feature_store import SongFeatureRecord, SongFeatureStore
+from .feedback import FeedbackEventError, FeedbackStore
 from .filtering import CandidateFilter
 from .profile import ProfileBuilder
 from .ranking import Ranker
@@ -68,6 +69,9 @@ __all__ = [
     "SongFeatureRecord",
     "Embedder",
     "EmbeddingMatch",
+    # P3: feedback logging.
+    "FeedbackStore",
+    "FeedbackEventError",
     # Standard data objects.
     "UserProfile",
     "Candidate",
