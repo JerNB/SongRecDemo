@@ -352,3 +352,108 @@ FEATURE_STORE_PATH: Path = (
     if Path(_FEATURE_STORE_PATH_RAW).is_absolute()
     else ROOT / _FEATURE_STORE_PATH_RAW
 )
+
+# ---------------------------------------------------------------------------
+# P3: feedback logging + offline evaluation
+# ---------------------------------------------------------------------------
+#
+# The product layer logs every recommendation exposure (the request and each
+# returned card) plus any user feedback events (click / like / dislike / ...)
+# into a local SQLite store. This builds the raw training data a learned
+# ranker would later consume -- WITHOUT changing the P0 ranking formula now.
+# Logging is strictly fire-and-forget: any failure is swallowed so it can
+# never break the recommendation path.
+
+# Master switch for feedback logging.
+FEEDBACK_LOGGING_ENABLED: bool = (
+    _os.environ.get("FEEDBACK_LOGGING_ENABLED", "1").strip().lower()
+    not in {"0", "false", "no", "off"}
+)
+
+# On-disk SQLite path for the feedback store. Relative paths resolve against
+# the project root so the demo can be launched from anywhere.
+_FEEDBACK_STORE_PATH_RAW: str = _os.environ.get(
+    "FEEDBACK_STORE_PATH", "data/feedback.sqlite"
+)
+FEEDBACK_STORE_PATH: Path = (
+    Path(_FEEDBACK_STORE_PATH_RAW)
+    if Path(_FEEDBACK_STORE_PATH_RAW).is_absolute()
+    else ROOT / _FEEDBACK_STORE_PATH_RAW
+)
+
+# Allowed user_feedback event types. The /api/feedback endpoint validates
+# against this whitelist. Names are deliberately honest: there is no real
+# listen-completion signal yet, so we only record explicit UI interactions.
+FEEDBACK_EVENT_TYPES: frozenset = frozenset({
+    "impression",
+    "click",
+    "play_preview",
+    "like",
+    "dislike",
+    "skip",
+    "add_to_playlist",
+    "open_netease_url",
+    "why_clicked",
+})
+
+# Version stamps written onto every recommendation_request row so logs from
+# different algorithm revisions never get silently mixed together.
+PIPELINE_VERSION: str = "p3-feedback-eval"
+RANKING_CONFIG_VERSION: str = "ranking_weights_v1"
+
+# ---------------------------------------------------------------------------
+# P4: shadow learned ranker
+# ---------------------------------------------------------------------------
+#
+# A lightweight learned ranker trained offline on the P3 feedback logs. In
+# this first stage it NEVER drives the live ordering -- the P0 rule ranker
+# still decides final_score / rank_score. When shadow mode is on and a
+# trained model is present, the recommender additionally computes a
+# ``learned_score`` per candidate purely for analysis / evaluation, so we can
+# observe how a learned model would rank versus the rules before ever letting
+# it take over.
+
+# Master switch. When True the learned ranker would be allowed to influence
+# ranking -- DELIBERATELY left False for P4: the learned score is observed,
+# never acted on.
+LEARNED_RANKER_ENABLED: bool = (
+    _os.environ.get("LEARNED_RANKER_ENABLED", "0").strip().lower()
+    not in {"0", "false", "no", "off"}
+)
+
+# Shadow mode: compute and attach learned_score (and a learned_rank_position)
+# without changing the rule ordering. On by default so the model is observable
+# as soon as one is trained, but harmless when no model file exists.
+LEARNED_RANKER_SHADOW_MODE: bool = (
+    _os.environ.get("LEARNED_RANKER_SHADOW_MODE", "1").strip().lower()
+    not in {"0", "false", "no", "off"}
+)
+
+# On-disk path of the trained joblib model. Relative paths resolve against the
+# project root so the demo can be launched from anywhere. The companion
+# feature schema lives next to it as ``learned_ranker_schema.json``.
+_LEARNED_RANKER_MODEL_PATH_RAW: str = _os.environ.get(
+    "LEARNED_RANKER_MODEL_PATH", "data/learned_ranker.joblib"
+)
+LEARNED_RANKER_MODEL_PATH: Path = (
+    Path(_LEARNED_RANKER_MODEL_PATH_RAW)
+    if Path(_LEARNED_RANKER_MODEL_PATH_RAW).is_absolute()
+    else ROOT / _LEARNED_RANKER_MODEL_PATH_RAW
+)
+
+# Companion feature schema written by the training CLI.
+LEARNED_RANKER_SCHEMA_PATH: Path = LEARNED_RANKER_MODEL_PATH.with_name(
+    "learned_ranker_schema.json"
+)
+
+# Minimum number of training samples the CLI requires before it will train.
+# Below this it prints an explanation and exits 0 (fail-soft, not an error).
+LEARNED_RANKER_MIN_SAMPLES: int = int(
+    _os.environ.get("LEARNED_RANKER_MIN_SAMPLES", "50")
+)
+
+# Sample weight assigned to impression-only (weak negative) training rows.
+# Deliberately low: a user not clicking does not strongly mean dislike.
+LEARNED_RANKER_WEAK_NEGATIVE_WEIGHT: float = float(
+    _os.environ.get("LEARNED_RANKER_WEAK_NEGATIVE_WEIGHT", "0.2")
+)
