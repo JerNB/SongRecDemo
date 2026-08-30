@@ -12,6 +12,12 @@ pyarrow>=15.0
 # Reporting layer (charts for the senior-project write-up)
 matplotlib>=3.8
 
+# Learning-to-rank experiments (run_retrieve_rank_experiments.py)
+xgboost==3.4.1
+
+# BPR-MF and LightGCN research experiments
+torch>=2.13
+
 # Collaborative filtering (ALS): implemented in-tree using NumPy/SciPy
 # (see src/recommenders/collaborative.py). No external ALS library is
 # required — the HKV 2008 algorithm is small enough to carry as first-
