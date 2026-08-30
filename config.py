@@ -390,6 +390,7 @@ FEEDBACK_EVENT_TYPES: frozenset = frozenset({
     "play_preview",
     "like",
     "dislike",
+    "not_interested",
     "skip",
     "add_to_playlist",
     "open_netease_url",
